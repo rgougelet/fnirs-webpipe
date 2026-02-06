@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fNIRS Quick Viewer</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+  <style>
+    canvas {
+      background: white;
+      border-radius: 0.5rem;
+    }
+  </style>
+</head>
+
+<body class="bg-slate-100 text-slate-800">
+
+  <div class="max-w-6xl mx-auto p-6 space-y-6">
+
+    <h1 class="text-2xl font-semibold">fNIRS Quick Viewer</h1>
+
+    <input
+      type="file"
+      id="input"
+      class="block w-full p-2 border rounded bg-white"
+    >
+
+    <div id="meta" class="bg-white rounded p-4 text-sm"></div>
+
+    <div id="controls" class="hidden bg-white rounded p-4 space-y-4"></div>
+
+    <canvas id="plot" width="900" height="450"></canvas>
+
+  </div>
+
+  <script src="mat4js.read.min.js"></script>
+  <script src="filter.js"></script>
+  <script src="plot.js"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>
