@@ -9,3 +9,5 @@ Open the web app and load a NIRx data folder as a zip file.
 
 ## Status
 Active development.
+
+License: CC BY-NC 4.0
