@@ -1,3 +1,6 @@
+const APP_VERSION = "0.2";
+const STATE_SCHEMA_VERSION = 1;
+
 const input = document.getElementById("input");
 const metaDiv = document.getElementById("meta");
 const controls = document.getElementById("controls");
@@ -26,6 +29,9 @@ let exclusionTable = null;
 let filterEnabled = false;
 let lowCutInput = null;
 let highCutInput = null;
+let filterBox = null;
+
+let notesInput = null;
 
 /* ================= Input ================= */
 
@@ -43,6 +49,17 @@ async function handleInput(evt) {
 }
 
 function resetState() {
+  samplingRate = null;
+  data = { wl1: null, wl2: null };
+  events = [];
+  channelLabels = [];
+  channelLabelSource = "default";
+
+  currentWavelength = "wl1";
+  currentChannel = 0;
+
+  filterEnabled = false;
+
   metaDiv.innerHTML = "";
   controls.classList.add("hidden");
   controls.innerHTML = "";
@@ -77,6 +94,11 @@ function loadFiles(files) {
     f.name.toLowerCase().endsWith(".mat")
   );
 
+  if (!hdr || !wl1 || !wl2) {
+    metaDiv.textContent = "Missing required files (.hdr, .wl1, .wl2)";
+    return;
+  }
+
   Promise.all([
     hdr.text(),
     wl1.text(),
@@ -84,7 +106,6 @@ function loadFiles(files) {
     evt ? evt.text() : null,
     probeMat ? probeMat.arrayBuffer() : null
   ]).then(([hdrT, wl1T, wl2T, evtT, matBuf]) => {
-
     samplingRate = parseSamplingRate(hdrT);
     data.wl1 = parseMatrix(wl1T);
     data.wl2 = parseMatrix(wl2T);
@@ -123,7 +144,10 @@ function buildControls() {
     r.type = "radio";
     r.name = "wavelength";
     r.checked = i === 0;
-    r.onchange = () => { currentWavelength = wl; redraw(); };
+    r.onchange = () => {
+      currentWavelength = wl;
+      redraw();
+    };
 
     label.appendChild(r);
     label.appendChild(document.createTextNode(wl === "wl1" ? "760 nm" : "850 nm"));
@@ -142,7 +166,10 @@ function buildControls() {
     r.type = "radio";
     r.name = "channel";
     r.checked = i === 0;
-    r.onchange = () => { currentChannel = i; redraw(); };
+    r.onchange = () => {
+      currentChannel = i;
+      redraw();
+    };
 
     label.appendChild(r);
     label.appendChild(document.createTextNode(lbl));
@@ -164,32 +191,71 @@ function buildControls() {
   fDiv.innerHTML = "<div class='font-semibold'>Butterworth filter (4th)</div>";
 
   const fCheck = document.createElement("label");
-  const fBox = document.createElement("input");
-  fBox.type = "checkbox";
-  fBox.onchange = () => { filterEnabled = fBox.checked; redraw(); };
-  fCheck.appendChild(fBox);
-  fCheck.appendChild(document.createTextNode(" enable"));
+  fCheck.className = "inline-flex items-center space-x-2";
+
+  filterBox = document.createElement("input");
+  filterBox.type = "checkbox";
+  filterBox.onchange = () => {
+    filterEnabled = filterBox.checked;
+    renderMeta();
+    redraw();
+  };
+
+  fCheck.appendChild(filterBox);
+  fCheck.appendChild(document.createTextNode("enable"));
 
   lowCutInput = document.createElement("input");
   lowCutInput.type = "number";
   lowCutInput.step = "0.01";
   lowCutInput.placeholder = "Low Hz";
-  lowCutInput.oninput = redraw;
+  lowCutInput.oninput = () => {
+    renderMeta();
+    redraw();
+  };
 
   highCutInput = document.createElement("input");
   highCutInput.type = "number";
   highCutInput.step = "0.01";
   highCutInput.placeholder = "High Hz";
-  highCutInput.oninput = redraw;
+  highCutInput.oninput = () => {
+    renderMeta();
+    redraw();
+  };
 
   fDiv.appendChild(fCheck);
   fDiv.appendChild(lowCutInput);
   fDiv.appendChild(highCutInput);
 
+  const stateDiv = document.createElement("div");
+  stateDiv.className = "flex flex-col space-y-2";
+
+  const notesLabel = document.createElement("div");
+  notesLabel.className = "font-semibold";
+  notesLabel.textContent = "Notes";
+
+  notesInput = document.createElement("textarea");
+  notesInput.rows = 3;
+  notesInput.placeholder = "Processing notes...";
+  notesInput.oninput = renderMeta;
+
+  const exportBtn = document.createElement("button");
+  exportBtn.textContent = "Export State";
+  exportBtn.onclick = exportState;
+
+  const importBtn = document.createElement("button");
+  importBtn.textContent = "Import State";
+  importBtn.onclick = importState;
+
+  stateDiv.appendChild(notesLabel);
+  stateDiv.appendChild(notesInput);
+  stateDiv.appendChild(exportBtn);
+  stateDiv.appendChild(importBtn);
+
   controls.appendChild(wlDiv);
   controls.appendChild(chDiv);
   controls.appendChild(exDiv);
   controls.appendChild(fDiv);
+  controls.appendChild(stateDiv);
 }
 
 /* ================= Redraw ================= */
@@ -205,16 +271,16 @@ function redraw() {
   let processed = trimmed.slice();
   let filterLabel = "no filter";
 
-  if (filterEnabled) {
+  if (filterEnabled && trimmed.length > 10) {
     const low = parseFloat(lowCutInput.value) || null;
     const high = parseFloat(highCutInput.value) || null;
 
     processed = butterworth4(trimmed, samplingRate, low, high);
     processed = rmsNormalize(trimmed, processed);
 
-    if (low && high) filterLabel = `BP ${low}-${high} Hz`;
-    else if (low) filterLabel = `HP ${low} Hz`;
-    else if (high) filterLabel = `LP ${high} Hz`;
+    if (low && high) filterLabel = "BP " + low + "-" + high + " Hz";
+    else if (low) filterLabel = "HP " + low + " Hz";
+    else if (high) filterLabel = "LP " + high + " Hz";
   }
 
   const wlLabel = currentWavelength === "wl1" ? "760 nm" : "850 nm";
@@ -227,7 +293,7 @@ function redraw() {
     samplingRate,
     intervals,
     events.map(e => ({ time: e.sample / samplingRate, code: e.code })),
-    `${wlLabel} ${chLabel} Raw`,
+    wlLabel + " " + chLabel + " Raw",
     formatStats(computeStats(raw))
   );
 
@@ -238,7 +304,7 @@ function redraw() {
     samplingRate,
     null,
     trimmedEvents,
-    `${wlLabel} ${chLabel} Trimmed (${filterLabel})`,
+    wlLabel + " " + chLabel + " Trimmed (" + filterLabel + ")",
     formatStats(computeStats(processed))
   );
 }
@@ -246,6 +312,17 @@ function redraw() {
 /* ================= Meta ================= */
 
 function renderMeta() {
+  const low = lowCutInput ? (parseFloat(lowCutInput.value) || null) : null;
+  const high = highCutInput ? (parseFloat(highCutInput.value) || null) : null;
+
+  let filterText = "off";
+  if (filterEnabled) {
+    if (low && high) filterText = "enabled (BP " + low + "-" + high + " Hz)";
+    else if (low) filterText = "enabled (HP " + low + " Hz)";
+    else if (high) filterText = "enabled (LP " + high + " Hz)";
+    else filterText = "enabled";
+  }
+
   let html = `
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div>
@@ -256,7 +333,13 @@ function renderMeta() {
           <div>Duration</div><div>${(data.wl1.length / samplingRate).toFixed(2)} s</div>
           <div>Channels</div><div>${data.wl1[0].length}</div>
           <div>Channel labels</div><div>${channelLabelSource}</div>
-          <div>Filter</div><div>${filterEnabled ? "enabled" : "off"}</div>
+          <div>Filter</div><div>${filterText}</div>
+          <div>App version</div><div>${APP_VERSION}</div>
+          <div>State schema</div><div>${STATE_SCHEMA_VERSION}</div>
+        </div>
+        <div class="mt-3">
+          <div class="font-semibold mb-1">Notes</div>
+          <div class="text-sm whitespace-pre-wrap">${escapeHtml(notesInput ? notesInput.value : "")}</div>
         </div>
       </div>
       <div>
@@ -290,10 +373,203 @@ function renderMeta() {
   metaDiv.innerHTML = html;
 }
 
+/* ================= State Export ================= */
+
+function buildStateObject() {
+  return {
+    schemaVersion: STATE_SCHEMA_VERSION,
+    appVersion: APP_VERSION,
+    timestamp: new Date().toISOString(),
+    wavelength: currentWavelength,
+    channel: currentChannel,
+    exclusions: parseIntervals(exclusionTable.value),
+    filter: {
+      enabled: filterEnabled,
+      lowHz: parseFloat(lowCutInput.value) || null,
+      highHz: parseFloat(highCutInput.value) || null
+    },
+    notes: notesInput ? notesInput.value : ""
+  };
+}
+
+function exportState() {
+  const state = buildStateObject();
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "fnirs-webpipe-state.json";
+  a.click();
+}
+
+/* ================= State Import ================= */
+
+function importState() {
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = ".json,application/json";
+
+  fileInput.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const rawState = JSON.parse(reader.result);
+      const normalized = normalizeState(rawState);
+      applyState(normalized);
+    };
+    reader.readAsText(file);
+  };
+
+  fileInput.click();
+}
+
+/* ================= Version Compatibility ================= */
+
+function normalizeState(raw) {
+  if (!raw || typeof raw !== "object") return defaultStateObject();
+
+  if (typeof raw.schemaVersion === "number") {
+    if (raw.schemaVersion === STATE_SCHEMA_VERSION) return raw;
+    return migrateState(raw);
+  }
+
+  return migrateLegacyState(raw);
+}
+
+function defaultStateObject() {
+  return {
+    schemaVersion: STATE_SCHEMA_VERSION,
+    appVersion: APP_VERSION,
+    timestamp: new Date().toISOString(),
+    wavelength: "wl1",
+    channel: 0,
+    exclusions: [],
+    filter: { enabled: false, lowHz: null, highHz: null },
+    notes: ""
+  };
+}
+
+function migrateState(state) {
+  let s = state;
+
+  if (s.schemaVersion === 0) {
+    s = migrateLegacyState(s);
+  }
+
+  if (typeof s.schemaVersion !== "number") {
+    s = migrateLegacyState(s);
+  }
+
+  s.schemaVersion = STATE_SCHEMA_VERSION;
+  if (!s.appVersion) s.appVersion = APP_VERSION;
+  if (!s.timestamp) s.timestamp = new Date().toISOString();
+
+  if (!s.filter) s.filter = { enabled: false, lowHz: null, highHz: null };
+  if (typeof s.filter.enabled !== "boolean") s.filter.enabled = false;
+  if (typeof s.filter.lowHz !== "number") s.filter.lowHz = s.filter.lowHz || null;
+  if (typeof s.filter.highHz !== "number") s.filter.highHz = s.filter.highHz || null;
+
+  if (!Array.isArray(s.exclusions)) s.exclusions = [];
+  s.exclusions = s.exclusions
+    .map(x => ({ start: Number(x.start), end: Number(x.end) }))
+    .filter(x => Number.isFinite(x.start) && Number.isFinite(x.end) && x.start < x.end);
+
+  if (typeof s.wavelength !== "string") s.wavelength = "wl1";
+  if (s.wavelength !== "wl1" && s.wavelength !== "wl2") s.wavelength = "wl1";
+
+  s.channel = Number.isFinite(Number(s.channel)) ? Number(s.channel) : 0;
+  if (s.channel < 0) s.channel = 0;
+
+  if (typeof s.notes !== "string") s.notes = "";
+
+  return s;
+}
+
+function migrateLegacyState(old) {
+  const s = defaultStateObject();
+
+  if (typeof old.wavelength === "string") s.wavelength = old.wavelength;
+  if (typeof old.currentWavelength === "string") s.wavelength = old.currentWavelength;
+
+  if (Number.isFinite(Number(old.channel))) s.channel = Number(old.channel);
+  if (Number.isFinite(Number(old.currentChannel))) s.channel = Number(old.currentChannel);
+
+  if (Array.isArray(old.exclusions)) s.exclusions = old.exclusions;
+  if (Array.isArray(old.intervals)) s.exclusions = old.intervals;
+
+  if (old.filter && typeof old.filter === "object") {
+    s.filter.enabled = !!old.filter.enabled;
+    s.filter.lowHz = Number.isFinite(Number(old.filter.lowHz)) ? Number(old.filter.lowHz) : null;
+    s.filter.highHz = Number.isFinite(Number(old.filter.highHz)) ? Number(old.filter.highHz) : null;
+  } else {
+    if (typeof old.filterEnabled === "boolean") s.filter.enabled = old.filterEnabled;
+    if (Number.isFinite(Number(old.lowHz))) s.filter.lowHz = Number(old.lowHz);
+    if (Number.isFinite(Number(old.highHz))) s.filter.highHz = Number(old.highHz);
+  }
+
+  if (typeof old.notes === "string") s.notes = old.notes;
+
+  if (typeof old.timestamp === "string") s.timestamp = old.timestamp;
+
+  return migrateState(s);
+}
+
+function applyState(state) {
+  if (!data.wl1) {
+    return;
+  }
+
+  const normalized = normalizeState(state);
+
+  currentWavelength = normalized.wavelength;
+  currentChannel = normalized.channel;
+
+  if (currentChannel >= data.wl1[0].length) currentChannel = data.wl1[0].length - 1;
+  if (currentChannel < 0) currentChannel = 0;
+
+  exclusionTable.value = normalized.exclusions.map(e => e.start + "," + e.end).join("\n");
+
+  filterEnabled = !!normalized.filter.enabled;
+  if (filterBox) filterBox.checked = filterEnabled;
+
+  lowCutInput.value = normalized.filter.lowHz === null ? "" : String(normalized.filter.lowHz);
+  highCutInput.value = normalized.filter.highHz === null ? "" : String(normalized.filter.highHz);
+
+  if (notesInput) notesInput.value = normalized.notes || "";
+
+  rebuildRadioSelections();
+
+  renderMeta();
+  redraw();
+}
+
+function rebuildRadioSelections() {
+  const wls = document.querySelectorAll("input[name='wavelength']");
+  wls.forEach(r => {
+    const txt = (r.parentElement && r.parentElement.textContent) ? r.parentElement.textContent : "";
+    if (currentWavelength === "wl1") r.checked = txt.indexOf("760") !== -1;
+    if (currentWavelength === "wl2") r.checked = txt.indexOf("850") !== -1;
+  });
+
+  const ch = document.querySelectorAll("input[name='channel']");
+  ch.forEach((r, i) => {
+    r.checked = i === currentChannel;
+  });
+}
+
 /* ================= Helpers ================= */
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function rmsNormalize(ref, x) {
-  const rms = a => Math.sqrt(a.reduce((s, v) => s + v * v, 0) / a.length);
+  const rms = a => Math.sqrt(a.reduce((sum, v) => sum + v * v, 0) / a.length);
   const r0 = rms(ref);
   const r1 = rms(x);
   if (r1 === 0) return x;
@@ -310,7 +586,7 @@ function extractChannelLabels(buf, expectedChannels) {
 
     const labels = probes.index_c.map(pair => "S" + pair[0] + " D" + pair[1]);
     return labels.length === expectedChannels ? labels : defaultChannelLabels();
-  } catch {
+  } catch (e) {
     return defaultChannelLabels();
   }
 }
@@ -321,9 +597,7 @@ function parseSamplingRate(t) {
 }
 
 function parseMatrix(t) {
-  return t.trim().split(/\r?\n/).map(l =>
-    l.trim().split(/\s+/).map(Number)
-  );
+  return t.trim().split(/\r?\n/).map(l => l.trim().split(/\s+/).map(Number));
 }
 
 function parseEvents(t) {
@@ -334,7 +608,8 @@ function parseEvents(t) {
 }
 
 function parseIntervals(text) {
-  return text.split(/\r?\n/)
+  return text
+    .split(/\r?\n/)
     .map(l => l.split(",").map(Number))
     .filter(p => p.length === 2 && p[0] < p[1])
     .map(p => ({ start: p[0], end: p[1] }));
@@ -347,16 +622,18 @@ function applyExclusions(series, intervals) {
   });
 }
 
-function adjustEvents(events, intervals) {
+function adjustEvents(eventsIn, intervals) {
   const out = [];
-  events.forEach(e => {
+  eventsIn.forEach(e => {
     const t = e.sample / samplingRate;
     let shift = 0;
     let excluded = false;
+
     intervals.forEach(intv => {
       if (t >= intv.start && t <= intv.end) excluded = true;
       if (intv.end < t) shift += (intv.end - intv.start);
     });
+
     if (!excluded) out.push({ time: t - shift, code: e.code });
   });
   return out;
@@ -366,6 +643,27 @@ function defaultChannelLabels() {
   return data.wl1[0].map((_, i) => "Channel " + (i + 1));
 }
 
+function computeStats(series) {
+  const sorted = series.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+
+  const mean = series.reduce((a, b) => a + b, 0) / series.length;
+  const sd = Math.sqrt(series.reduce((s, v) => s + (v - mean) * (v - mean), 0) / series.length);
+
+  return {
+    mean,
+    median,
+    sd,
+    min: sorted[0],
+    max: sorted[sorted.length - 1]
+  };
+}
+
 function formatStats(s) {
-  return `mean ${s.mean.toFixed(2)} | median ${s.median.toFixed(2)} | sd ${s.sd.toFixed(2)} | min ${s.min.toFixed(2)} | max ${s.max.toFixed(2)}`;
+  return "mean " + s.mean.toFixed(2) +
+    " | median " + s.median.toFixed(2) +
+    " | sd " + s.sd.toFixed(2) +
+    " | min " + s.min.toFixed(2) +
+    " | max " + s.max.toFixed(2);
 }
