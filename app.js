@@ -1,5 +1,5 @@
 const APP_VERSION = "0.2";
-const STATE_SCHEMA_VERSION = 1;
+const PROTOCOL_SCHEMA_VERSION = 1;
 
 const input = document.getElementById("input");
 const metaDiv = document.getElementById("meta");
@@ -32,23 +32,55 @@ let highCutInput = null;
 let filterBox = null;
 
 let notesInput = null;
+let branchTagInput = null;
 
-/* ================= Input ================= */
+let datasetLabel = "unknown-dataset";
+let inputTypeLabel = "unknown";
+
+let sources = {
+  hdr: null,
+  wl1: null,
+  wl2: null,
+  evt: null,
+  probeMat: null,
+  samplingRateFrom: null,
+  eventsFrom: null,
+  channelLabelsFrom: null
+};
+
+let pendingProtocol = null;
 
 input.addEventListener("change", handleInput);
 
+initUrlProtocolListener();
+
+/* ================= Input ================= */
+
 async function handleInput(evt) {
-  resetState();
+  resetUiOnly();
   const files = Array.from(evt.target.files);
 
-  if (files.length === 1 && files[0].name.endsWith(".zip")) {
+  if (files.length === 1 && files[0].name.toLowerCase().endsWith(".zip")) {
+    inputTypeLabel = "zip";
+    datasetLabel = stem(files[0].name);
     await loadZip(files[0]);
   } else {
+    inputTypeLabel = "files";
+    const hdr = files.find(f => f.name.toLowerCase().endsWith(".hdr"));
+    datasetLabel = hdr ? stem(hdr.name) : (files[0] ? stem(files[0].name) : "unknown-dataset");
     loadFiles(files);
   }
 }
 
-function resetState() {
+function resetUiOnly() {
+  metaDiv.innerHTML = "";
+  controls.classList.add("hidden");
+  controls.innerHTML = "";
+  ctxRaw.clearRect(0, 0, canvasRaw.width, canvasRaw.height);
+  ctxTrim.clearRect(0, 0, canvasTrim.width, canvasTrim.height);
+}
+
+function resetAllState() {
   samplingRate = null;
   data = { wl1: null, wl2: null };
   events = [];
@@ -60,20 +92,45 @@ function resetState() {
 
   filterEnabled = false;
 
-  metaDiv.innerHTML = "";
-  controls.classList.add("hidden");
-  controls.innerHTML = "";
-
-  ctxRaw.clearRect(0, 0, canvasRaw.width, canvasRaw.height);
-  ctxTrim.clearRect(0, 0, canvasTrim.width, canvasTrim.height);
+  sources = {
+    hdr: null,
+    wl1: null,
+    wl2: null,
+    evt: null,
+    probeMat: null,
+    samplingRateFrom: null,
+    eventsFrom: null,
+    channelLabelsFrom: null
+  };
 }
 
-/* ================= Loading ================= */
+/* ================= ZIP handling (auto detect protocol ZIP) ================= */
 
 async function loadZip(zipFile) {
   const zip = await JSZip.loadAsync(zipFile);
-  const files = [];
 
+  const protoFile =
+    zip.file("protocol.pipe") ||
+    zip.file("protocol.json");
+
+  if (protoFile) {
+    const txt = await protoFile.async("text");
+    try {
+      const obj = JSON.parse(txt);
+      const normalized = normalizeProtocol(obj);
+      if (data.wl1) {
+        applyProtocol(normalized);
+      } else {
+        pendingProtocol = normalized;
+      }
+      metaDiv.textContent = "Protocol imported from ZIP. Load data to apply it to plots.";
+    } catch (e) {
+      metaDiv.textContent = "Protocol ZIP detected, but protocol file could not be parsed: " + e;
+    }
+    return;
+  }
+
+  const files = [];
   for (const name in zip.files) {
     const e = zip.files[name];
     if (!e.dir) {
@@ -84,15 +141,25 @@ async function loadZip(zipFile) {
   loadFiles(files);
 }
 
+/* ================= Loading NIRx data ================= */
+
 function loadFiles(files) {
-  const hdr = files.find(f => f.name.endsWith(".hdr"));
-  const wl1 = files.find(f => f.name.endsWith(".wl1"));
-  const wl2 = files.find(f => f.name.endsWith(".wl2"));
-  const evt = files.find(f => f.name.endsWith(".evt"));
+  resetAllState();
+
+  const hdr = files.find(f => f.name.toLowerCase().endsWith(".hdr"));
+  const wl1 = files.find(f => f.name.toLowerCase().endsWith(".wl1"));
+  const wl2 = files.find(f => f.name.toLowerCase().endsWith(".wl2"));
+  const evt = files.find(f => f.name.toLowerCase().endsWith(".evt"));
   const probeMat = files.find(f =>
     f.name.toLowerCase().includes("probeinfo") &&
     f.name.toLowerCase().endsWith(".mat")
   );
+
+  sources.hdr = hdr ? hdr.name : null;
+  sources.wl1 = wl1 ? wl1.name : null;
+  sources.wl2 = wl2 ? wl2.name : null;
+  sources.evt = evt ? evt.name : null;
+  sources.probeMat = probeMat ? probeMat.name : null;
 
   if (!hdr || !wl1 || !wl2) {
     metaDiv.textContent = "Missing required files (.hdr, .wl1, .wl2)";
@@ -107,20 +174,32 @@ function loadFiles(files) {
     probeMat ? probeMat.arrayBuffer() : null
   ]).then(([hdrT, wl1T, wl2T, evtT, matBuf]) => {
     samplingRate = parseSamplingRate(hdrT);
+    sources.samplingRateFrom = hdr.name;
+
     data.wl1 = parseMatrix(wl1T);
     data.wl2 = parseMatrix(wl2T);
+
     events = evtT ? parseEvents(evtT) : [];
+    sources.eventsFrom = evt ? evt.name : "none";
 
     if (matBuf) {
       channelLabels = extractChannelLabels(matBuf, data.wl1[0].length);
       channelLabelSource = "probeInfo.mat";
+      sources.channelLabelsFrom = probeMat.name;
     } else {
       channelLabels = defaultChannelLabels();
       channelLabelSource = "default (probeInfo.mat not found)";
+      sources.channelLabelsFrom = "default";
     }
 
     buildControls();
     controls.classList.remove("hidden");
+
+    if (pendingProtocol) {
+      applyProtocol(pendingProtocol);
+      pendingProtocol = null;
+    }
+
     renderMeta();
     redraw();
   });
@@ -144,10 +223,7 @@ function buildControls() {
     r.type = "radio";
     r.name = "wavelength";
     r.checked = i === 0;
-    r.onchange = () => {
-      currentWavelength = wl;
-      redraw();
-    };
+    r.onchange = () => { currentWavelength = wl; redraw(); renderMeta(); };
 
     label.appendChild(r);
     label.appendChild(document.createTextNode(wl === "wl1" ? "760 nm" : "850 nm"));
@@ -155,7 +231,7 @@ function buildControls() {
   });
 
   const chDiv = document.createElement("div");
-  chDiv.className = "flex flex-col space-y-1 max-h-48 overflow-y-auto";
+  chDiv.className = "flex flex-col space-y-1 max-h-60 overflow-y-auto";
   chDiv.innerHTML = "<div class='font-semibold'>Channel</div>";
 
   channelLabels.forEach((lbl, i) => {
@@ -166,10 +242,7 @@ function buildControls() {
     r.type = "radio";
     r.name = "channel";
     r.checked = i === 0;
-    r.onchange = () => {
-      currentChannel = i;
-      redraw();
-    };
+    r.onchange = () => { currentChannel = i; redraw(); renderMeta(); };
 
     label.appendChild(r);
     label.appendChild(document.createTextNode(lbl));
@@ -183,7 +256,8 @@ function buildControls() {
   exclusionTable = document.createElement("textarea");
   exclusionTable.rows = 4;
   exclusionTable.placeholder = "start,end";
-  exclusionTable.oninput = redraw;
+  exclusionTable.oninput = () => { redraw(); renderMeta(); };
+  exclusionTable.style.minWidth = "220px";
   exDiv.appendChild(exclusionTable);
 
   const fDiv = document.createElement("div");
@@ -195,11 +269,7 @@ function buildControls() {
 
   filterBox = document.createElement("input");
   filterBox.type = "checkbox";
-  filterBox.onchange = () => {
-    filterEnabled = filterBox.checked;
-    renderMeta();
-    redraw();
-  };
+  filterBox.onchange = () => { filterEnabled = filterBox.checked; redraw(); renderMeta(); };
 
   fCheck.appendChild(filterBox);
   fCheck.appendChild(document.createTextNode("enable"));
@@ -208,62 +278,98 @@ function buildControls() {
   lowCutInput.type = "number";
   lowCutInput.step = "0.01";
   lowCutInput.placeholder = "Low Hz";
-  lowCutInput.oninput = () => {
-    renderMeta();
-    redraw();
-  };
+  lowCutInput.oninput = () => { redraw(); renderMeta(); };
 
   highCutInput = document.createElement("input");
   highCutInput.type = "number";
   highCutInput.step = "0.01";
   highCutInput.placeholder = "High Hz";
-  highCutInput.oninput = () => {
-    renderMeta();
-    redraw();
-  };
+  highCutInput.oninput = () => { redraw(); renderMeta(); };
 
   fDiv.appendChild(fCheck);
   fDiv.appendChild(lowCutInput);
   fDiv.appendChild(highCutInput);
 
-  const stateDiv = document.createElement("div");
-  stateDiv.className = "flex flex-col space-y-2";
+  const protoDiv = document.createElement("div");
+  protoDiv.className = "flex flex-col space-y-2";
+
+  const branchLabel = document.createElement("div");
+  branchLabel.className = "font-semibold";
+  branchLabel.textContent = "Protocol label";
+
+  branchTagInput = document.createElement("input");
+  branchTagInput.type = "text";
+  branchTagInput.placeholder = "e.g., fs32, qc1, motionTrim";
+  branchTagInput.oninput = renderMeta;
 
   const notesLabel = document.createElement("div");
   notesLabel.className = "font-semibold";
   notesLabel.textContent = "Notes";
 
   notesInput = document.createElement("textarea");
-  notesInput.rows = 3;
-  notesInput.placeholder = "Processing notes...";
+  notesInput.rows = 10;
+  notesInput.placeholder = "Notes about processing choices, rationale, caveats...";
   notesInput.oninput = renderMeta;
+  notesInput.style.minWidth = "340px";
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "flex flex-row flex-wrap gap-8 items-center";
 
   const exportBtn = document.createElement("button");
-  exportBtn.textContent = "Export State";
-  exportBtn.onclick = exportState;
+  exportBtn.type = "button";
+  exportBtn.textContent = "Export Protocol";
+  styleButton(exportBtn);
+  exportBtn.onclick = exportProtocol;
 
   const importBtn = document.createElement("button");
-  importBtn.textContent = "Import State";
-  importBtn.onclick = importState;
+  importBtn.type = "button";
+  importBtn.textContent = "Import Protocol";
+  styleButton(importBtn);
+  importBtn.onclick = importProtocol;
 
-  stateDiv.appendChild(notesLabel);
-  stateDiv.appendChild(notesInput);
-  stateDiv.appendChild(exportBtn);
-  stateDiv.appendChild(importBtn);
+  const copyLinkBtn = document.createElement("button");
+  copyLinkBtn.type = "button";
+  copyLinkBtn.textContent = "Copy Link (Protocol)";
+  styleButton(copyLinkBtn);
+  copyLinkBtn.onclick = copyProtocolLink;
+
+  btnRow.appendChild(exportBtn);
+  btnRow.appendChild(importBtn);
+  btnRow.appendChild(copyLinkBtn);
+
+  protoDiv.appendChild(branchLabel);
+  protoDiv.appendChild(branchTagInput);
+  protoDiv.appendChild(notesLabel);
+  protoDiv.appendChild(notesInput);
+  protoDiv.appendChild(btnRow);
 
   controls.appendChild(wlDiv);
   controls.appendChild(chDiv);
   controls.appendChild(exDiv);
   controls.appendChild(fDiv);
-  controls.appendChild(stateDiv);
+  controls.appendChild(protoDiv);
 }
 
-/* ================= Redraw ================= */
+function styleButton(btn) {
+  btn.style.display = "inline-block";
+  btn.style.padding = "8px 12px";
+  btn.style.border = "1px solid #334155";
+  btn.style.borderRadius = "8px";
+  btn.style.background = "#ffffff";
+  btn.style.cursor = "pointer";
+  btn.style.fontWeight = "600";
+  btn.style.userSelect = "none";
+  btn.onmouseenter = () => { btn.style.background = "#f1f5f9"; };
+  btn.onmouseleave = () => { btn.style.background = "#ffffff"; };
+}
+
+/* ================= Plotting ================= */
 
 function redraw() {
   if (!data.wl1) return;
 
   const raw = data[currentWavelength].map(r => r[currentChannel]);
+
   const intervals = parseIntervals(exclusionTable.value);
   const trimmed = applyExclusions(raw, intervals);
   const trimmedEvents = adjustEvents(events, intervals);
@@ -271,7 +377,7 @@ function redraw() {
   let processed = trimmed.slice();
   let filterLabel = "no filter";
 
-  if (filterEnabled && trimmed.length > 10) {
+  if (filterEnabled) {
     const low = parseFloat(lowCutInput.value) || null;
     const high = parseFloat(highCutInput.value) || null;
 
@@ -281,6 +387,7 @@ function redraw() {
     if (low && high) filterLabel = "BP " + low + "-" + high + " Hz";
     else if (low) filterLabel = "HP " + low + " Hz";
     else if (high) filterLabel = "LP " + high + " Hz";
+    else filterLabel = "filter enabled";
   }
 
   const wlLabel = currentWavelength === "wl1" ? "760 nm" : "850 nm";
@@ -309,11 +416,21 @@ function redraw() {
   );
 }
 
-/* ================= Meta ================= */
+/* ================= Meta and protocol summary ================= */
 
 function renderMeta() {
-  const low = lowCutInput ? (parseFloat(lowCutInput.value) || null) : null;
-  const high = highCutInput ? (parseFloat(highCutInput.value) || null) : null;
+  if (!data.wl1 || !samplingRate) return;
+
+  const summary = buildProtocolSummary(buildProtocolObject());
+
+  const bHdr = basename(sources.hdr) || "missing";
+  const bWl1 = basename(sources.wl1) || "missing";
+  const bWl2 = basename(sources.wl2) || "missing";
+  const bEvt = basename(sources.evt) || "none";
+  const bProbe = basename(sources.probeMat) || "none";
+
+  const low = parseFloat(lowCutInput.value) || null;
+  const high = parseFloat(highCutInput.value) || null;
 
   let filterText = "off";
   if (filterEnabled) {
@@ -323,101 +440,206 @@ function renderMeta() {
     else filterText = "enabled";
   }
 
-  let html = `
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div>
-        <div class="font-semibold mb-2">Recording Summary</div>
-        <div class="grid grid-cols-2 gap-2 text-sm">
-          <div>Sampling rate</div><div>${samplingRate} Hz</div>
-          <div>Samples</div><div>${data.wl1.length}</div>
-          <div>Duration</div><div>${(data.wl1.length / samplingRate).toFixed(2)} s</div>
-          <div>Channels</div><div>${data.wl1[0].length}</div>
-          <div>Channel labels</div><div>${channelLabelSource}</div>
-          <div>Filter</div><div>${filterText}</div>
-          <div>App version</div><div>${APP_VERSION}</div>
-          <div>State schema</div><div>${STATE_SCHEMA_VERSION}</div>
-        </div>
-        <div class="mt-3">
-          <div class="font-semibold mb-1">Notes</div>
-          <div class="text-sm whitespace-pre-wrap">${escapeHtml(notesInput ? notesInput.value : "")}</div>
-        </div>
-      </div>
-      <div>
-        <div class="font-semibold mb-2">Events</div>
-        <table class="w-full text-sm border-collapse">
-          <thead>
-            <tr>
-              <th class="border px-2 py-1">Time (s)</th>
-              <th class="border px-2 py-1">Code</th>
-            </tr>
-          </thead>
-          <tbody>
-  `;
+  const labelText = (branchTagInput ? branchTagInput.value.trim() : "") || "none";
+  const notesText = notesInput ? notesInput.value : "";
+
+  let html = ""
+    + "<div class='grid grid-cols-1 md:grid-cols-2 gap-6'>"
+    + "  <div>"
+    + "    <div class='font-semibold mb-2'>Recording Summary</div>"
+    + "    <div class='grid grid-cols-2 gap-2 text-sm'>"
+    + "      <div>Dataset</div><div>" + escapeHtml(datasetLabel) + "</div>"
+    + "      <div>Input type</div><div>" + escapeHtml(inputTypeLabel) + "</div>"
+    + "      <div>Sampling rate</div><div>" + samplingRate + " Hz</div>"
+    + "      <div>Samples</div><div>" + data.wl1.length + "</div>"
+    + "      <div>Duration</div><div>" + (data.wl1.length / samplingRate).toFixed(2) + " s</div>"
+    + "      <div>Channels</div><div>" + data.wl1[0].length + "</div>"
+    + "      <div>Filter</div><div>" + escapeHtml(filterText) + "</div>"
+    + "      <div>Protocol label</div><div>" + escapeHtml(labelText) + "</div>"
+    + "      <div>App version</div><div>" + APP_VERSION + "</div>"
+    + "      <div>Protocol schema</div><div>" + PROTOCOL_SCHEMA_VERSION + "</div>"
+    + "    </div>"
+    + "    <div class='mt-3'>"
+    + "      <div class='font-semibold mb-1'>Protocol summary</div>"
+    + "      <div class='text-sm whitespace-pre-wrap'>" + escapeHtml(summary) + "</div>"
+    + "    </div>"
+    + "    <div class='mt-3'>"
+    + "      <div class='font-semibold mb-1'>Sources</div>"
+    + "      <div class='grid grid-cols-2 gap-2 text-sm'>"
+    + "        <div>HDR</div><div>" + escapeHtml(bHdr) + "</div>"
+    + "        <div>WL1</div><div>" + escapeHtml(bWl1) + "</div>"
+    + "        <div>WL2</div><div>" + escapeHtml(bWl2) + "</div>"
+    + "        <div>EVT</div><div>" + escapeHtml(bEvt) + "</div>"
+    + "        <div>probeInfo</div><div>" + escapeHtml(bProbe) + "</div>"
+    + "        <div>Sampling rate from</div><div>" + escapeHtml(basename(sources.samplingRateFrom) || "?") + "</div>"
+    + "        <div>Events from</div><div>" + escapeHtml(basename(sources.eventsFrom) || "?") + "</div>"
+    + "        <div>Channel labels from</div><div>" + escapeHtml(basename(sources.channelLabelsFrom) || "?") + "</div>"
+    + "      </div>"
+    + "    </div>"
+    + "    <div class='mt-3'>"
+    + "      <div class='font-semibold mb-1'>Notes</div>"
+    + "      <div class='text-sm whitespace-pre-wrap'>" + escapeHtml(notesText) + "</div>"
+    + "    </div>"
+    + "  </div>"
+    + "  <div>"
+    + "    <div class='font-semibold mb-2'>Events</div>"
+    + "    <table class='w-full text-sm border-collapse' style='table-layout: fixed;'>"
+    + "      <thead>"
+    + "        <tr>"
+    + "          <th class='border px-2 py-1' style='width: 80px;'>Time (s)</th>"
+    + "          <th class='border px-2 py-1' style='width: 60px;'>Code</th>"
+    + "        </tr>"
+    + "      </thead>"
+    + "      <tbody>";
 
   events.forEach(e => {
-    html += `
-      <tr>
-        <td class="border px-2 py-1">${(e.sample / samplingRate).toFixed(2)}</td>
-        <td class="border px-2 py-1">${e.code}</td>
-      </tr>
-    `;
+    html += ""
+      + "<tr>"
+      + "  <td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + (e.sample / samplingRate).toFixed(2) + "</td>"
+      + "  <td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + e.code + "</td>"
+      + "</tr>";
   });
 
-  html += `
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
+  html += ""
+    + "      </tbody>"
+    + "    </table>"
+    + "  </div>"
+    + "</div>";
 
   metaDiv.innerHTML = html;
 }
 
-/* ================= State Export ================= */
+/* ================= Protocol object, export, import ================= */
 
-function buildStateObject() {
-  return {
-    schemaVersion: STATE_SCHEMA_VERSION,
+function buildProtocolObject() {
+  const label = (branchTagInput ? branchTagInput.value.trim() : "") || "";
+  const notes = notesInput ? notesInput.value : "";
+
+  const intervals = parseIntervals(exclusionTable.value);
+
+  const low = parseFloat(lowCutInput.value) || null;
+  const high = parseFloat(highCutInput.value) || null;
+
+  const steps = [];
+
+  steps.push({
+    step: "trim",
+    enabled: true,
+    intervalsSeconds: intervals
+  });
+
+  steps.push({
+    step: "filter_butterworth_iir",
+    enabled: !!filterEnabled,
+    order: 4,
+    lowHz: low,
+    highHz: high,
+    amplitudePreservation: "rms_normalize_to_pre_filter"
+  });
+
+  const protocol = {
+    protocolSchemaVersion: PROTOCOL_SCHEMA_VERSION,
     appVersion: APP_VERSION,
-    timestamp: new Date().toISOString(),
-    wavelength: currentWavelength,
-    channel: currentChannel,
-    exclusions: parseIntervals(exclusionTable.value),
-    filter: {
-      enabled: filterEnabled,
-      lowHz: parseFloat(lowCutInput.value) || null,
-      highHz: parseFloat(highCutInput.value) || null
+    createdAt: new Date().toISOString(),
+    datasetLabel: datasetLabel,
+    protocolLabel: label,
+    selection: {
+      wavelength: currentWavelength,
+      channelIndex: currentChannel
     },
-    notes: notesInput ? notesInput.value : ""
+    steps: steps,
+    notes: notes,
+    sources: {
+      hdr: sources.hdr,
+      wl1: sources.wl1,
+      wl2: sources.wl2,
+      evt: sources.evt,
+      probeInfoMat: sources.probeMat,
+      samplingRateFrom: sources.samplingRateFrom,
+      eventsFrom: sources.eventsFrom,
+      channelLabelsFrom: sources.channelLabelsFrom
+    }
   };
+
+  protocol.protocolSummary = buildProtocolSummary(protocol);
+
+  return protocol;
 }
 
-function exportState() {
-  const state = buildStateObject();
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+function buildProtocolSummary(protocol) {
+  const wl = protocol.selection && protocol.selection.wavelength ? protocol.selection.wavelength : currentWavelength;
+  const wlTxt = wl === "wl1" ? "760" : "850";
+
+  const chIdx = protocol.selection && Number.isFinite(Number(protocol.selection.channelIndex))
+    ? Number(protocol.selection.channelIndex)
+    : currentChannel;
+
+  const chLbl = channelLabels[chIdx] ? channelLabels[chIdx] : ("ch" + String(chIdx + 1));
+
+  const label = protocol.protocolLabel ? protocol.protocolLabel : "";
+  const labelPart = label ? ("label=" + label + " | ") : "";
+
+  let trimPart = "trim=none";
+  const trimStep = (protocol.steps || []).find(s => s.step === "trim");
+  if (trimStep && trimStep.enabled && Array.isArray(trimStep.intervalsSeconds) && trimStep.intervalsSeconds.length) {
+    const n = trimStep.intervalsSeconds.length;
+    const ints = trimStep.intervalsSeconds
+      .map(x => Number(x.start).toFixed(2) + "-" + Number(x.end).toFixed(2))
+      .join(",");
+    trimPart = "trim=" + n + " [" + ints + "]";
+  }
+
+  let filterPart = "filter=off";
+  const f = (protocol.steps || []).find(s => s.step === "filter_butterworth_iir");
+  if (f && f.enabled) {
+    const low = (f.lowHz === null || typeof f.lowHz === "undefined") ? "" : String(f.lowHz);
+    const high = (f.highHz === null || typeof f.highHz === "undefined") ? "" : String(f.highHz);
+    if (low && high) filterPart = "filter=bp(" + low + "-" + high + ") o" + String(f.order);
+    else if (low) filterPart = "filter=hp(" + low + ") o" + String(f.order);
+    else if (high) filterPart = "filter=lp(" + high + ") o" + String(f.order);
+    else filterPart = "filter=on o" + String(f.order);
+    filterPart += " amp=rms";
+  }
+
+  return labelPart + "wl=" + wlTxt + " | ch=" + chLbl + " | " + trimPart + " | " + filterPart;
+}
+
+function exportProtocol() {
+  if (!data.wl1) return;
+
+  const proto = buildProtocolObject();
+  const blob = new Blob([JSON.stringify(proto, null, 2)], { type: "application/json" });
 
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "fnirs-webpipe-state.json";
+  a.download = defaultProtocolFilename(proto);
   a.click();
 }
 
-/* ================= State Import ================= */
-
-function importState() {
+function importProtocol() {
   const fileInput = document.createElement("input");
   fileInput.type = "file";
-  fileInput.accept = ".json,application/json";
+  fileInput.accept = ".pipe,.json,application/json";
 
   fileInput.onchange = e => {
     const file = e.target.files[0];
     if (!file) return;
 
+    if (file.name.toLowerCase().endsWith(".zip")) {
+      handleInput({ target: { files: [file] } });
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
-      const rawState = JSON.parse(reader.result);
-      const normalized = normalizeState(rawState);
-      applyState(normalized);
+      try {
+        const raw = JSON.parse(reader.result);
+        const normalized = normalizeProtocol(raw);
+        if (data.wl1) applyProtocol(normalized);
+        else pendingProtocol = normalized;
+      } catch (err) {
+        metaDiv.textContent = "Protocol import failed: " + err;
+      }
     };
     reader.readAsText(file);
   };
@@ -425,147 +647,229 @@ function importState() {
   fileInput.click();
 }
 
-/* ================= Version Compatibility ================= */
+function applyProtocol(protocol) {
+  const p = normalizeProtocol(protocol);
 
-function normalizeState(raw) {
-  if (!raw || typeof raw !== "object") return defaultStateObject();
+  if (branchTagInput) branchTagInput.value = p.protocolLabel || "";
+  if (notesInput) notesInput.value = p.notes || "";
 
-  if (typeof raw.schemaVersion === "number") {
-    if (raw.schemaVersion === STATE_SCHEMA_VERSION) return raw;
-    return migrateState(raw);
-  }
+  const sel = p.selection || {};
+  const wl = sel.wavelength === "wl2" ? "wl2" : "wl1";
+  const ch = Number.isFinite(Number(sel.channelIndex)) ? Number(sel.channelIndex) : 0;
 
-  return migrateLegacyState(raw);
-}
+  currentWavelength = wl;
+  currentChannel = ch;
 
-function defaultStateObject() {
-  return {
-    schemaVersion: STATE_SCHEMA_VERSION,
-    appVersion: APP_VERSION,
-    timestamp: new Date().toISOString(),
-    wavelength: "wl1",
-    channel: 0,
-    exclusions: [],
-    filter: { enabled: false, lowHz: null, highHz: null },
-    notes: ""
-  };
-}
-
-function migrateState(state) {
-  let s = state;
-
-  if (s.schemaVersion === 0) {
-    s = migrateLegacyState(s);
-  }
-
-  if (typeof s.schemaVersion !== "number") {
-    s = migrateLegacyState(s);
-  }
-
-  s.schemaVersion = STATE_SCHEMA_VERSION;
-  if (!s.appVersion) s.appVersion = APP_VERSION;
-  if (!s.timestamp) s.timestamp = new Date().toISOString();
-
-  if (!s.filter) s.filter = { enabled: false, lowHz: null, highHz: null };
-  if (typeof s.filter.enabled !== "boolean") s.filter.enabled = false;
-  if (typeof s.filter.lowHz !== "number") s.filter.lowHz = s.filter.lowHz || null;
-  if (typeof s.filter.highHz !== "number") s.filter.highHz = s.filter.highHz || null;
-
-  if (!Array.isArray(s.exclusions)) s.exclusions = [];
-  s.exclusions = s.exclusions
-    .map(x => ({ start: Number(x.start), end: Number(x.end) }))
-    .filter(x => Number.isFinite(x.start) && Number.isFinite(x.end) && x.start < x.end);
-
-  if (typeof s.wavelength !== "string") s.wavelength = "wl1";
-  if (s.wavelength !== "wl1" && s.wavelength !== "wl2") s.wavelength = "wl1";
-
-  s.channel = Number.isFinite(Number(s.channel)) ? Number(s.channel) : 0;
-  if (s.channel < 0) s.channel = 0;
-
-  if (typeof s.notes !== "string") s.notes = "";
-
-  return s;
-}
-
-function migrateLegacyState(old) {
-  const s = defaultStateObject();
-
-  if (typeof old.wavelength === "string") s.wavelength = old.wavelength;
-  if (typeof old.currentWavelength === "string") s.wavelength = old.currentWavelength;
-
-  if (Number.isFinite(Number(old.channel))) s.channel = Number(old.channel);
-  if (Number.isFinite(Number(old.currentChannel))) s.channel = Number(old.currentChannel);
-
-  if (Array.isArray(old.exclusions)) s.exclusions = old.exclusions;
-  if (Array.isArray(old.intervals)) s.exclusions = old.intervals;
-
-  if (old.filter && typeof old.filter === "object") {
-    s.filter.enabled = !!old.filter.enabled;
-    s.filter.lowHz = Number.isFinite(Number(old.filter.lowHz)) ? Number(old.filter.lowHz) : null;
-    s.filter.highHz = Number.isFinite(Number(old.filter.highHz)) ? Number(old.filter.highHz) : null;
-  } else {
-    if (typeof old.filterEnabled === "boolean") s.filter.enabled = old.filterEnabled;
-    if (Number.isFinite(Number(old.lowHz))) s.filter.lowHz = Number(old.lowHz);
-    if (Number.isFinite(Number(old.highHz))) s.filter.highHz = Number(old.highHz);
-  }
-
-  if (typeof old.notes === "string") s.notes = old.notes;
-
-  if (typeof old.timestamp === "string") s.timestamp = old.timestamp;
-
-  return migrateState(s);
-}
-
-function applyState(state) {
-  if (!data.wl1) {
-    return;
-  }
-
-  const normalized = normalizeState(state);
-
-  currentWavelength = normalized.wavelength;
-  currentChannel = normalized.channel;
-
-  if (currentChannel >= data.wl1[0].length) currentChannel = data.wl1[0].length - 1;
+  if (data.wl1 && currentChannel >= data.wl1[0].length) currentChannel = data.wl1[0].length - 1;
   if (currentChannel < 0) currentChannel = 0;
 
-  exclusionTable.value = normalized.exclusions.map(e => e.start + "," + e.end).join("\n");
+  const trimStep = (p.steps || []).find(s => s.step === "trim");
+  if (trimStep && trimStep.enabled && Array.isArray(trimStep.intervalsSeconds)) {
+    exclusionTable.value = trimStep.intervalsSeconds
+      .map(x => Number(x.start) + "," + Number(x.end))
+      .join("\n");
+  } else {
+    exclusionTable.value = "";
+  }
 
-  filterEnabled = !!normalized.filter.enabled;
-  if (filterBox) filterBox.checked = filterEnabled;
-
-  lowCutInput.value = normalized.filter.lowHz === null ? "" : String(normalized.filter.lowHz);
-  highCutInput.value = normalized.filter.highHz === null ? "" : String(normalized.filter.highHz);
-
-  if (notesInput) notesInput.value = normalized.notes || "";
+  const f = (p.steps || []).find(s => s.step === "filter_butterworth_iir");
+  if (f && f.enabled) {
+    filterEnabled = true;
+    if (filterBox) filterBox.checked = true;
+    lowCutInput.value = (f.lowHz === null || typeof f.lowHz === "undefined") ? "" : String(f.lowHz);
+    highCutInput.value = (f.highHz === null || typeof f.highHz === "undefined") ? "" : String(f.highHz);
+  } else {
+    filterEnabled = false;
+    if (filterBox) filterBox.checked = false;
+    lowCutInput.value = "";
+    highCutInput.value = "";
+  }
 
   rebuildRadioSelections();
-
   renderMeta();
   redraw();
 }
 
-function rebuildRadioSelections() {
-  const wls = document.querySelectorAll("input[name='wavelength']");
-  wls.forEach(r => {
-    const txt = (r.parentElement && r.parentElement.textContent) ? r.parentElement.textContent : "";
-    if (currentWavelength === "wl1") r.checked = txt.indexOf("760") !== -1;
-    if (currentWavelength === "wl2") r.checked = txt.indexOf("850") !== -1;
-  });
+/* ================= URL protocol share ================= */
 
-  const ch = document.querySelectorAll("input[name='channel']");
-  ch.forEach((r, i) => {
-    r.checked = i === currentChannel;
+function copyProtocolLink() {
+  if (!data.wl1) return;
+
+  const proto = buildProtocolObject();
+  const compact = {
+    protocolSchemaVersion: proto.protocolSchemaVersion,
+    protocolLabel: proto.protocolLabel,
+    selection: proto.selection,
+    steps: proto.steps,
+    notes: proto.notes,
+    protocolSummary: proto.protocolSummary
+  };
+
+  const enc = encodeForUrl(compact);
+  if (!enc) return;
+
+  const base = window.location.href.split("#")[0];
+  const link = base + "#protocol=" + enc;
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link);
+  } else {
+    window.prompt("Copy link:", link);
+  }
+}
+
+function initUrlProtocolListener() {
+  const p = parseProtocolFromHash();
+  if (p) pendingProtocol = p;
+
+  window.addEventListener("hashchange", () => {
+    const s = parseProtocolFromHash();
+    if (!s) return;
+    if (data.wl1) applyProtocol(s);
+    else pendingProtocol = s;
   });
 }
 
-/* ================= Helpers ================= */
+function parseProtocolFromHash() {
+  const h = window.location.hash || "";
+  const m = h.match(/#protocol=([^&]+)/);
+  if (!m) return null;
+
+  try {
+    const json = decodeFromUrl(m[1]);
+    const obj = JSON.parse(json);
+    return normalizeProtocol(obj);
+  } catch {
+    return null;
+  }
+}
+
+function encodeForUrl(obj) {
+  try {
+    const json = JSON.stringify(obj);
+    return base64EncodeUtf8(json);
+  } catch {
+    return null;
+  }
+}
+
+function decodeFromUrl(s) {
+  return base64DecodeUtf8(s);
+}
+
+/* ================= Protocol normalization ================= */
+
+function normalizeProtocol(raw) {
+  const out = {
+    protocolSchemaVersion: PROTOCOL_SCHEMA_VERSION,
+    appVersion: APP_VERSION,
+    createdAt: raw && raw.createdAt ? raw.createdAt : new Date().toISOString(),
+    datasetLabel: raw && typeof raw.datasetLabel === "string" ? raw.datasetLabel : datasetLabel,
+    protocolLabel: raw && typeof raw.protocolLabel === "string" ? raw.protocolLabel : "",
+    selection: {
+      wavelength: raw && raw.selection && raw.selection.wavelength === "wl2" ? "wl2" : "wl1",
+      channelIndex: raw && raw.selection && Number.isFinite(Number(raw.selection.channelIndex))
+        ? Number(raw.selection.channelIndex)
+        : 0
+    },
+    steps: Array.isArray(raw && raw.steps) ? raw.steps : [],
+    notes: raw && typeof raw.notes === "string" ? raw.notes : "",
+    sources: raw && raw.sources && typeof raw.sources === "object" ? raw.sources : {},
+    protocolSummary: raw && typeof raw.protocolSummary === "string" ? raw.protocolSummary : ""
+  };
+
+  if (!out.steps.length) {
+    out.steps = [
+      { step: "trim", enabled: true, intervalsSeconds: [] },
+      { step: "filter_butterworth_iir", enabled: false, order: 4, lowHz: null, highHz: null, amplitudePreservation: "rms_normalize_to_pre_filter" }
+    ];
+  }
+
+  const trim = out.steps.find(s => s.step === "trim");
+  if (trim) {
+    trim.enabled = !!trim.enabled;
+    if (!Array.isArray(trim.intervalsSeconds)) trim.intervalsSeconds = [];
+    trim.intervalsSeconds = trim.intervalsSeconds
+      .map(x => ({ start: Number(x.start), end: Number(x.end) }))
+      .filter(x => Number.isFinite(x.start) && Number.isFinite(x.end) && x.start < x.end);
+  }
+
+  const f = out.steps.find(s => s.step === "filter_butterworth_iir");
+  if (f) {
+    f.enabled = !!f.enabled;
+    f.order = 4;
+    f.lowHz = (f.lowHz === null || typeof f.lowHz === "undefined") ? null : (Number.isFinite(Number(f.lowHz)) ? Number(f.lowHz) : null);
+    f.highHz = (f.highHz === null || typeof f.highHz === "undefined") ? null : (Number.isFinite(Number(f.highHz)) ? Number(f.highHz) : null);
+    if (typeof f.amplitudePreservation !== "string") f.amplitudePreservation = "rms_normalize_to_pre_filter";
+  }
+
+  out.protocolSummary = buildProtocolSummary(out);
+  return out;
+}
+
+/* ================= Filename helpers ================= */
+
+function defaultProtocolFilename(protocol) {
+  const base = sanitizeFilename(protocol.datasetLabel || "fnirs-webpipe");
+  const ts = timestampCompact(new Date());
+  const label = sanitizeFilename((protocol.protocolLabel || "").trim());
+  let name = base;
+  if (label) name += "__" + label;
+  name += "__protocol__" + ts + ".pipe";
+  return name;
+}
+
+/* ================= Misc helpers and parsing ================= */
+
+function basename(p) {
+  if (!p) return "";
+  const s = String(p);
+  const parts = s.split("/");
+  return parts[parts.length - 1];
+}
+
+function stem(name) {
+  const n = String(name || "");
+  const i = n.lastIndexOf(".");
+  return i > 0 ? n.slice(0, i) : n;
+}
+
+function sanitizeFilename(s) {
+  return String(s || "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function timestampCompact(d) {
+  const yyyy = d.getFullYear();
+  const mm = pad2(d.getMonth() + 1);
+  const dd = pad2(d.getDate());
+  const hh = pad2(d.getHours());
+  const mi = pad2(d.getMinutes());
+  const ss = pad2(d.getSeconds());
+  return String(yyyy) + String(mm) + String(dd) + "-" + String(hh) + String(mi) + String(ss);
+}
 
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+function base64EncodeUtf8(s) {
+  return btoa(unescape(encodeURIComponent(s))).replace(/=+$/g, "");
+}
+
+function base64DecodeUtf8(b64) {
+  const padLen = (4 - (b64.length % 4)) % 4;
+  const padded = b64 + "====".slice(0, padLen);
+  return decodeURIComponent(escape(atob(padded)));
 }
 
 function rmsNormalize(ref, x) {
@@ -583,10 +887,9 @@ function extractChannelLabels(buf, expectedChannels) {
     const parsed = mat4js.read(buf);
     const probes = parsed.data.probeInfo.probes;
     if (!probes || !probes.index_c) return defaultChannelLabels();
-
     const labels = probes.index_c.map(pair => "S" + pair[0] + " D" + pair[1]);
     return labels.length === expectedChannels ? labels : defaultChannelLabels();
-  } catch (e) {
+  } catch {
     return defaultChannelLabels();
   }
 }
@@ -597,7 +900,9 @@ function parseSamplingRate(t) {
 }
 
 function parseMatrix(t) {
-  return t.trim().split(/\r?\n/).map(l => l.trim().split(/\s+/).map(Number));
+  return t.trim().split(/\r?\n/).map(l =>
+    l.trim().split(/\s+/).map(Number)
+  );
 }
 
 function parseEvents(t) {
@@ -608,10 +913,9 @@ function parseEvents(t) {
 }
 
 function parseIntervals(text) {
-  return text
-    .split(/\r?\n/)
+  return text.split(/\r?\n/)
     .map(l => l.split(",").map(Number))
-    .filter(p => p.length === 2 && p[0] < p[1])
+    .filter(p => p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && p[0] < p[1])
     .map(p => ({ start: p[0], end: p[1] }));
 }
 
@@ -643,6 +947,18 @@ function defaultChannelLabels() {
   return data.wl1[0].map((_, i) => "Channel " + (i + 1));
 }
 
+function rebuildRadioSelections() {
+  const wls = document.querySelectorAll("input[name='wavelength']");
+  wls.forEach(r => {
+    const txt = (r.parentElement && r.parentElement.textContent) ? r.parentElement.textContent : "";
+    if (currentWavelength === "wl1") r.checked = txt.indexOf("760") !== -1;
+    if (currentWavelength === "wl2") r.checked = txt.indexOf("850") !== -1;
+  });
+
+  const ch = document.querySelectorAll("input[name='channel']");
+  ch.forEach((r, i) => { r.checked = i === currentChannel; });
+}
+
 function computeStats(series) {
   const sorted = series.slice().sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -651,13 +967,7 @@ function computeStats(series) {
   const mean = series.reduce((a, b) => a + b, 0) / series.length;
   const sd = Math.sqrt(series.reduce((s, v) => s + (v - mean) * (v - mean), 0) / series.length);
 
-  return {
-    mean,
-    median,
-    sd,
-    min: sorted[0],
-    max: sorted[sorted.length - 1]
-  };
+  return { mean, median, sd, min: sorted[0], max: sorted[sorted.length - 1] };
 }
 
 function formatStats(s) {
