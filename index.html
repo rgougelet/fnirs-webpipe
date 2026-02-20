@@ -2,46 +2,44 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>fNIRS Web Pipe</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>fNIRS Web Pipeline</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-
-  <style>
-    canvas {
-      background: white;
-      border-radius: 0.5rem;
-    }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
 
-<body class="bg-slate-100 text-slate-800">
+<body class="min-h-screen bg-slate-100 text-slate-800">
+  <main class="app-shell max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+    <header class="rounded-xl bg-white shadow-sm border border-slate-200 p-5 md:p-6">
+      <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">fNIRS Web Pipeline</h1>
+      <p class="text-sm text-slate-600 mt-2">Load NIRx files or a protocol ZIP, inspect channels, and export processing protocol details.</p>
+    </header>
 
-  <div class="max-w-6xl mx-auto p-6 space-y-6">
+    <section class="rounded-xl bg-white shadow-sm border border-slate-200 p-5 space-y-3">
+      <label for="input" class="block text-sm font-medium text-slate-700">Dataset input</label>
+      <input
+        type="file"
+        id="input"
+        class="block w-full p-2 border border-slate-300 rounded-md bg-white file:mr-4 file:rounded-md file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-800"
+        aria-describedby="input-help"
+      >
+      <p id="input-help" class="text-xs text-slate-500">Required files: <code>.hdr</code>, <code>.wl1</code>, <code>.wl2</code>; optional: <code>.evt</code>, <code>probeInfo.mat</code>, or protocol ZIP.</p>
+    </section>
 
-    <h1 class="text-2xl font-semibold">fNIRS Web Pipeline v0.1</h1>
+    <section id="meta" class="rounded-xl bg-white shadow-sm border border-slate-200 p-4 text-sm whitespace-pre-wrap"></section>
 
-    <input
-      type="file"
-      id="input"
-      class="block w-full p-2 border rounded bg-white"
-    >
+    <section id="controls" class="hidden rounded-xl bg-white shadow-sm border border-slate-200 p-4"></section>
 
-    <div id="meta" class="bg-white rounded p-4 text-sm"></div>
-
-    <div id="controls" class="hidden bg-white rounded p-4 space-y-4"></div>
-
-    <canvas id="plot" width="900" height="450"></canvas>
-
-  </div>
+    <section class="space-y-4">
+      <canvas id="plot" width="900" height="450"></canvas>
+    </section>
+  </main>
 
   <script src="mat4js.read.min.js"></script>
   <script src="filter.js"></script>
   <script src="plot.js"></script>
   <script src="app.js"></script>
-
 </body>
 </html>
-
-
-

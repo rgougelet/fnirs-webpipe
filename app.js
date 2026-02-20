@@ -209,7 +209,8 @@ function loadFiles(files) {
 
 function buildControls() {
   controls.innerHTML = "";
-  controls.className = "flex flex-wrap gap-8 items-start";
+  controls.classList.remove("hidden");
+  controls.classList.add("grid", "gap-5");
 
   const wlDiv = document.createElement("div");
   wlDiv.className = "flex flex-col space-y-1";
