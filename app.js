@@ -1,17 +1,23 @@
+// app.js
+
 const APP_VERSION = "0.2";
 const PROTOCOL_SCHEMA_VERSION = 1;
 
 const input = document.getElementById("input");
 const metaDiv = document.getElementById("meta");
 const controls = document.getElementById("controls");
+const protocolHost = document.getElementById("protocolHost");
+const plotGrid = document.getElementById("plotGrid");
 
 const canvasRaw = document.getElementById("plot");
 const ctxRaw = canvasRaw.getContext("2d");
+canvasRaw.classList.add("w-full");
 
 const canvasTrim = document.createElement("canvas");
 canvasTrim.width = canvasRaw.width;
 canvasTrim.height = canvasRaw.height;
 canvasRaw.after(canvasTrim);
+canvasTrim.classList.add("w-full");
 const ctxTrim = canvasTrim.getContext("2d");
 
 const M = { left: 90, right: 20, top: 40, bottom: 60 };
@@ -50,6 +56,10 @@ let sources = {
 
 let pendingProtocol = null;
 
+/* Protocol UI state */
+let protocolFilenameLabelEl = null;
+let lastProtocolFilename = "";
+
 input.addEventListener("change", handleInput);
 
 initUrlProtocolListener();
@@ -74,6 +84,10 @@ async function handleInput(evt) {
 
 function resetUiOnly() {
   metaDiv.innerHTML = "";
+  if (protocolHost) {
+  protocolHost.classList.add("hidden");
+  protocolHost.innerHTML = "";
+  }
   controls.classList.add("hidden");
   controls.innerHTML = "";
   ctxRaw.clearRect(0, 0, canvasRaw.width, canvasRaw.height);
@@ -123,6 +137,8 @@ async function loadZip(zipFile) {
       } else {
         pendingProtocol = normalized;
       }
+      lastProtocolFilename = basename(zipFile.name);
+      updateProtocolFilenameLabel();
       metaDiv.textContent = "Protocol imported from ZIP. Load data to apply it to plots.";
     } catch (e) {
       metaDiv.textContent = "Protocol ZIP detected, but protocol file could not be parsed: " + e;
@@ -209,7 +225,50 @@ function loadFiles(files) {
 
 function buildControls() {
   controls.innerHTML = "";
-  controls.className = "flex flex-wrap gap-8 items-start";
+  controls.classList.remove("hidden");
+  controls.className = "bg-white rounded p-4 flex flex-col gap-4";
+
+  /* Protocol bar first */
+  const protoBar = document.createElement("div");
+  protoBar.className = "flex flex-row flex-wrap gap-3 items-center";
+
+  const protoTitle = document.createElement("div");
+  protoTitle.className = "font-semibold";
+  protoTitle.textContent = "Protocol:";
+
+  const exportBtn = document.createElement("button");
+  exportBtn.className = "btn";
+  exportBtn.textContent = "Save";
+  exportBtn.onclick = exportProtocol;
+
+  const importBtn = document.createElement("button");
+  importBtn.className = "btn";
+  importBtn.textContent = "Load";
+  importBtn.onclick = importProtocol;
+
+  const resetBtn = document.createElement("button");
+  resetBtn.className = "btn";
+  resetBtn.textContent = "Reset";
+  resetBtn.onclick = resetProtocolUiOnly;
+
+  const copyLinkBtn = document.createElement("button");
+  copyLinkBtn.className = "btn";
+  copyLinkBtn.textContent = "Link";
+  copyLinkBtn.onclick = copyProtocolLink;
+
+  protocolFilenameLabelEl = document.createElement("div");
+  protocolFilenameLabelEl.className = "text-sm text-slate-600 ml-2";
+  updateProtocolFilenameLabel();
+
+  protoBar.appendChild(protoTitle);
+  protoBar.appendChild(exportBtn);
+  protoBar.appendChild(importBtn);
+  protoBar.appendChild(resetBtn);
+  protoBar.appendChild(copyLinkBtn);
+  protoBar.appendChild(protocolFilenameLabelEl);
+
+  const grid = document.createElement("div");
+  grid.className = "flex flex-wrap gap-8 items-start";
 
   const wlDiv = document.createElement("div");
   wlDiv.className = "flex flex-col space-y-1";
@@ -222,7 +281,7 @@ function buildControls() {
     const r = document.createElement("input");
     r.type = "radio";
     r.name = "wavelength";
-    r.checked = i === 0;
+    r.checked = (currentWavelength === wl) || (i === 0 && currentWavelength === "wl1");
     r.onchange = () => { currentWavelength = wl; redraw(); renderMeta(); };
 
     label.appendChild(r);
@@ -241,7 +300,7 @@ function buildControls() {
     const r = document.createElement("input");
     r.type = "radio";
     r.name = "channel";
-    r.checked = i === 0;
+    r.checked = (i === currentChannel);
     r.onchange = () => { currentChannel = i; redraw(); renderMeta(); };
 
     label.appendChild(r);
@@ -258,6 +317,7 @@ function buildControls() {
   exclusionTable.placeholder = "start,end";
   exclusionTable.oninput = () => { redraw(); renderMeta(); };
   exclusionTable.style.minWidth = "220px";
+  exclusionTable.className = "p-2 border rounded bg-white";
   exDiv.appendChild(exclusionTable);
 
   const fDiv = document.createElement("div");
@@ -279,12 +339,14 @@ function buildControls() {
   lowCutInput.step = "0.01";
   lowCutInput.placeholder = "Low Hz";
   lowCutInput.oninput = () => { redraw(); renderMeta(); };
+  lowCutInput.className = "p-2 border rounded bg-white";
 
   highCutInput = document.createElement("input");
   highCutInput.type = "number";
   highCutInput.step = "0.01";
   highCutInput.placeholder = "High Hz";
   highCutInput.oninput = () => { redraw(); renderMeta(); };
+  highCutInput.className = "p-2 border rounded bg-white";
 
   fDiv.appendChild(fCheck);
   fDiv.appendChild(lowCutInput);
@@ -301,6 +363,7 @@ function buildControls() {
   branchTagInput.type = "text";
   branchTagInput.placeholder = "e.g., fs32, qc1, motionTrim";
   branchTagInput.oninput = renderMeta;
+  branchTagInput.className = "p-2 border rounded bg-white";
 
   const notesLabel = document.createElement("div");
   notesLabel.className = "font-semibold";
@@ -311,56 +374,59 @@ function buildControls() {
   notesInput.placeholder = "Notes about processing choices, rationale, caveats...";
   notesInput.oninput = renderMeta;
   notesInput.style.minWidth = "340px";
-
-  const btnRow = document.createElement("div");
-  btnRow.className = "flex flex-row flex-wrap gap-8 items-center";
-
-  const exportBtn = document.createElement("button");
-  exportBtn.type = "button";
-  exportBtn.textContent = "Export Protocol";
-  styleButton(exportBtn);
-  exportBtn.onclick = exportProtocol;
-
-  const importBtn = document.createElement("button");
-  importBtn.type = "button";
-  importBtn.textContent = "Import Protocol";
-  styleButton(importBtn);
-  importBtn.onclick = importProtocol;
-
-  const copyLinkBtn = document.createElement("button");
-  copyLinkBtn.type = "button";
-  copyLinkBtn.textContent = "Copy Link (Protocol)";
-  styleButton(copyLinkBtn);
-  copyLinkBtn.onclick = copyProtocolLink;
-
-  btnRow.appendChild(exportBtn);
-  btnRow.appendChild(importBtn);
-  btnRow.appendChild(copyLinkBtn);
+  notesInput.className = "p-2 border rounded bg-white";
 
   protoDiv.appendChild(branchLabel);
   protoDiv.appendChild(branchTagInput);
   protoDiv.appendChild(notesLabel);
   protoDiv.appendChild(notesInput);
-  protoDiv.appendChild(btnRow);
 
-  controls.appendChild(wlDiv);
-  controls.appendChild(chDiv);
-  controls.appendChild(exDiv);
-  controls.appendChild(fDiv);
-  controls.appendChild(protoDiv);
+  grid.appendChild(wlDiv);
+  grid.appendChild(chDiv);
+  grid.appendChild(exDiv);
+  grid.appendChild(fDiv);
+  grid.appendChild(protoDiv);
+
+  if (protocolHost) {
+  protocolHost.innerHTML = "";
+  protocolHost.appendChild(protoBar);
+  protocolHost.classList.remove("hidden");
+  }
+
+  controls.appendChild(grid);
 }
 
-function styleButton(btn) {
-  btn.style.display = "inline-block";
-  btn.style.padding = "8px 12px";
-  btn.style.border = "1px solid #334155";
-  btn.style.borderRadius = "8px";
-  btn.style.background = "#ffffff";
-  btn.style.cursor = "pointer";
-  btn.style.fontWeight = "600";
-  btn.style.userSelect = "none";
-  btn.onmouseenter = () => { btn.style.background = "#f1f5f9"; };
-  btn.onmouseleave = () => { btn.style.background = "#ffffff"; };
+function updateProtocolFilenameLabel() {
+  if (!protocolFilenameLabelEl) return;
+  if (!lastProtocolFilename) {
+    protocolFilenameLabelEl.textContent = "";
+    return;
+  }
+  protocolFilenameLabelEl.textContent = "file: " + lastProtocolFilename;
+}
+
+function resetProtocolUiOnly() {
+  if (!data.wl1) return;
+
+  currentWavelength = "wl1";
+  currentChannel = 0;
+
+  if (branchTagInput) branchTagInput.value = "";
+  if (notesInput) notesInput.value = "";
+
+  if (exclusionTable) exclusionTable.value = "";
+
+  filterEnabled = false;
+  if (filterBox) filterBox.checked = false;
+  if (lowCutInput) lowCutInput.value = "";
+  if (highCutInput) highCutInput.value = "";
+
+  lastProtocolFilename = "";
+  updateProtocolFilenameLabel();
+
+  rebuildRadioSelections();
+  renderMeta();
+  redraw();
 }
 
 /* ================= Plotting ================= */
@@ -378,15 +444,17 @@ function redraw() {
   let filterLabel = "no filter";
 
   if (filterEnabled) {
-    const low = parseFloat(lowCutInput.value) || null;
-    const high = parseFloat(highCutInput.value) || null;
+    const low = parseFloat(lowCutInput.value);
+    const high = parseFloat(highCutInput.value);
+    const lowHz = Number.isFinite(low) ? low : null;
+    const highHz = Number.isFinite(high) ? high : null;
 
-    processed = butterworth4(trimmed, samplingRate, low, high);
+    processed = butterworth4(trimmed, samplingRate, lowHz, highHz);
     processed = rmsNormalize(trimmed, processed);
 
-    if (low && high) filterLabel = "BP " + low + "-" + high + " Hz";
-    else if (low) filterLabel = "HP " + low + " Hz";
-    else if (high) filterLabel = "LP " + high + " Hz";
+    if (lowHz && highHz) filterLabel = "BP " + lowHz + "-" + highHz + " Hz";
+    else if (lowHz) filterLabel = "HP " + lowHz + " Hz";
+    else if (highHz) filterLabel = "LP " + highHz + " Hz";
     else filterLabel = "filter enabled";
   }
 
@@ -429,14 +497,16 @@ function renderMeta() {
   const bEvt = basename(sources.evt) || "none";
   const bProbe = basename(sources.probeMat) || "none";
 
-  const low = parseFloat(lowCutInput.value) || null;
-  const high = parseFloat(highCutInput.value) || null;
+  const low = parseFloat(lowCutInput.value);
+  const high = parseFloat(highCutInput.value);
+  const lowHz = Number.isFinite(low) ? low : null;
+  const highHz = Number.isFinite(high) ? high : null;
 
   let filterText = "off";
   if (filterEnabled) {
-    if (low && high) filterText = "enabled (BP " + low + "-" + high + " Hz)";
-    else if (low) filterText = "enabled (HP " + low + " Hz)";
-    else if (high) filterText = "enabled (LP " + high + " Hz)";
+    if (lowHz && highHz) filterText = "enabled (BP " + lowHz + "-" + highHz + " Hz)";
+    else if (lowHz) filterText = "enabled (HP " + lowHz + " Hz)";
+    else if (highHz) filterText = "enabled (LP " + highHz + " Hz)";
     else filterText = "enabled";
   }
 
@@ -492,13 +562,20 @@ function renderMeta() {
     + "      </thead>"
     + "      <tbody>";
 
-  events.forEach(e => {
+  if (!events.length) {
     html += ""
       + "<tr>"
-      + "  <td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + (e.sample / samplingRate).toFixed(2) + "</td>"
-      + "  <td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + e.code + "</td>"
+      + "  <td class='border px-2 py-2 text-slate-600' colspan='2'>No events found</td>"
       + "</tr>";
-  });
+  } else {
+    events.forEach(e => {
+      html += ""
+        + "<tr>"
+        + "  <td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + (e.sample / samplingRate).toFixed(2) + "</td>"
+        + "  <td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + e.code + "</td>"
+        + "</tr>";
+    });
+  }
 
   html += ""
     + "      </tbody>"
@@ -517,8 +594,11 @@ function buildProtocolObject() {
 
   const intervals = parseIntervals(exclusionTable.value);
 
-  const low = parseFloat(lowCutInput.value) || null;
-  const high = parseFloat(highCutInput.value) || null;
+  const low = parseFloat(lowCutInput.value);
+  const high = parseFloat(highCutInput.value);
+
+  const lowHz = Number.isFinite(low) ? low : null;
+  const highHz = Number.isFinite(high) ? high : null;
 
   const steps = [];
 
@@ -532,8 +612,8 @@ function buildProtocolObject() {
     step: "filter_butterworth_iir",
     enabled: !!filterEnabled,
     order: 4,
-    lowHz: low,
-    highHz: high,
+    lowHz: lowHz,
+    highHz: highHz,
     amplitudePreservation: "rms_normalize_to_pre_filter"
   });
 
@@ -614,12 +694,15 @@ function exportProtocol() {
   a.href = URL.createObjectURL(blob);
   a.download = defaultProtocolFilename(proto);
   a.click();
+
+  lastProtocolFilename = a.download;
+  updateProtocolFilenameLabel();
 }
 
 function importProtocol() {
   const fileInput = document.createElement("input");
   fileInput.type = "file";
-  fileInput.accept = ".pipe,.json,application/json";
+  fileInput.accept = ".pipe,.json,.zip,application/json";
 
   fileInput.onchange = e => {
     const file = e.target.files[0];
@@ -637,6 +720,9 @@ function importProtocol() {
         const normalized = normalizeProtocol(raw);
         if (data.wl1) applyProtocol(normalized);
         else pendingProtocol = normalized;
+
+        lastProtocolFilename = basename(file.name);
+        updateProtocolFilenameLabel();
       } catch (err) {
         metaDiv.textContent = "Protocol import failed: " + err;
       }
@@ -811,11 +897,11 @@ function normalizeProtocol(raw) {
 
 function defaultProtocolFilename(protocol) {
   const base = sanitizeFilename(protocol.datasetLabel || "fnirs-webpipe");
-  const ts = timestampCompact(new Date());
   const label = sanitizeFilename((protocol.protocolLabel || "").trim());
+
   let name = base;
-  if (label) name += "__" + label;
-  name += "__protocol__" + ts + ".pipe";
+  if (label) name += "_" + label;
+  name += "_protocol.pipe";
   return name;
 }
 
@@ -839,20 +925,6 @@ function sanitizeFilename(s) {
     .replace(/[^A-Za-z0-9._-]+/g, "_")
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "");
-}
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-function timestampCompact(d) {
-  const yyyy = d.getFullYear();
-  const mm = pad2(d.getMonth() + 1);
-  const dd = pad2(d.getDate());
-  const hh = pad2(d.getHours());
-  const mi = pad2(d.getMinutes());
-  const ss = pad2(d.getSeconds());
-  return String(yyyy) + String(mm) + String(dd) + "-" + String(hh) + String(mi) + String(ss);
 }
 
 function escapeHtml(s) {
@@ -913,6 +985,7 @@ function parseEvents(t) {
 }
 
 function parseIntervals(text) {
+  if (!text) return [];
   return text.split(/\r?\n/)
     .map(l => l.split(",").map(Number))
     .filter(p => p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && p[0] < p[1])
@@ -920,6 +993,7 @@ function parseIntervals(text) {
 }
 
 function applyExclusions(series, intervals) {
+  if (!intervals.length) return series.slice();
   return series.filter((_, i) => {
     const t = i / samplingRate;
     return !intervals.some(intv => t >= intv.start && t <= intv.end);
@@ -927,6 +1001,9 @@ function applyExclusions(series, intervals) {
 }
 
 function adjustEvents(eventsIn, intervals) {
+  if (!eventsIn.length) return [];
+  if (!intervals.length) return eventsIn.map(e => ({ time: e.sample / samplingRate, code: e.code }));
+
   const out = [];
   eventsIn.forEach(e => {
     const t = e.sample / samplingRate;

@@ -1,18 +1,14 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>fNIRS Web Pipe</title>
+  <title>fNIRS Web Pipeline</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
-  <style>
-    canvas {
-      background: white;
-      border-radius: 0.5rem;
-    }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
 
 <body class="bg-slate-100 text-slate-800">
@@ -21,17 +17,26 @@
 
     <h1 class="text-2xl font-semibold">fNIRS Web Pipeline v0.1</h1>
 
-    <input
-      type="file"
-      id="input"
-      class="block w-full p-2 border rounded bg-white"
-    >
+    <div id="topRow" class="bg-white rounded p-4 flex flex-col md:flex-row gap-6 items-start">
+      <div class="flex-1 min-w-[280px]">
+        <div class="font-semibold mb-2">Import</div>
+        <input
+          type="file"
+          id="input"
+          class="block w-full p-2 border rounded bg-white"
+        >
+      </div>
+
+      <div id="protocolHost" class="flex-1 min-w-[280px] hidden"></div>
+    </div>
 
     <div id="meta" class="bg-white rounded p-4 text-sm"></div>
 
-    <div id="controls" class="hidden bg-white rounded p-4 space-y-4"></div>
+    <div id="controls" class="hidden bg-white rounded p-4"></div>
 
-    <canvas id="plot" width="900" height="450"></canvas>
+    <div id="plotGrid" class="bg-white rounded p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <canvas id="plot" width="900" height="450" class="w-full"></canvas>
+    </div>
 
   </div>
 
@@ -42,6 +47,3 @@
 
 </body>
 </html>
-
-
-

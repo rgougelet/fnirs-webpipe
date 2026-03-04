@@ -1,43 +1,54 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>fNIRS Quick Viewer</title>
+/* style.css */
 
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+canvas {
+  background: #ffffff;
+  border-radius: 0.5rem;
+  display: block;
+  width: 100%;
+  height: auto;
+}
 
-  <style>
-    canvas {
-      border-radius: 0.5rem;
-      background: #ffffff;
-    }
-  </style>
-</head>
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 
-<body class="bg-slate-100 text-slate-800">
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
 
-  <div class="max-w-6xl mx-auto p-6 space-y-6">
+  background: #ffffff;
+  color: #0f172a;
 
-    <h1 class="text-2xl font-semibold">fNIRS Quick Viewer</h1>
+  font-weight: 700;
+  line-height: 1;
 
-    <input
-      type="file"
-      id="input"
-      class="block w-full p-2 border rounded bg-white"
-    >
+  cursor: pointer;
+  user-select: none;
 
-    <div id="meta" class="bg-white rounded p-4 text-sm whitespace-pre-wrap"></div>
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
 
-    <div id="controls" class="hidden bg-white rounded p-4 space-y-4"></div>
+.btn:hover {
+  background: #f1f5f9;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.10);
+  transform: translateY(-1px);
+}
 
-    <canvas id="plot" width="900" height="450"></canvas>
+.btn:active {
+  transform: translateY(0px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.10);
+}
 
-  </div>
+.btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
 
-  <script src="mat4js.read.min.js"></script>
-  <script src="plot.js"></script>
-  <script src="app.js"></script>
-
-</body>
-</html>
+/* Optional: slightly tighter table feel inside meta */
+#meta table th,
+#meta table td {
+  vertical-align: top;
+}
