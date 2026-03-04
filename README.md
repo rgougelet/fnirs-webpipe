@@ -19,7 +19,7 @@ For faster visual iteration:
 3. Run local app server:
 `npm run serve`
 
-4. Capture desktop + mobile screenshots (dark mode default):
+4. Capture desktop screenshot (dark mode default):
 `npm run ui:capture`
 
 Optional light mode capture:
@@ -29,6 +29,8 @@ By default, capture will try to auto-load the newest ZIP from `../NIRx` (fallbac
 
 Optional overrides:
 - `node scripts/capture-ui.mjs --zip=../NIRx/2026-02-18_002.zip`
+- Include mobile capture explicitly:
+- `node scripts/capture-ui.mjs --include-mobile=true`
 - `node scripts/capture-ui.mjs --nirx-dir=../NIRx`
 
 Screenshots are written to `screenshots/`.
