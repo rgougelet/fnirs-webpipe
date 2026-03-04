@@ -23,7 +23,7 @@ canvasTrim.height = PLOT_HEIGHT;
 canvasTrim.classList.add("w-full");
 const ctxTrim = canvasTrim.getContext("2d");
 
-const M = { left: 68, right: 12, top: 16, bottom: 48 };
+const M = { left: 54, right: 18, top: 10, bottom: 36 };
 let rawPlotHeaderEl = null;
 let trimPlotHeaderEl = null;
 
@@ -556,28 +556,30 @@ function redraw() {
   if (!data.wl1) return;
 
   const raw = data[currentWavelength].map(r => r[currentChannel]);
-
-  const intervals = parseIntervals(exclusionTable.value);
-  const trimmed = applyExclusions(raw, intervals);
-  const trimmedEvents = adjustEvents(events, intervals);
-
-  let processed = trimmed.slice();
+  let filtered = raw.slice();
   let filterLabel = "no filter";
 
   const low = parseFloat(lowCutInput.value);
   const high = parseFloat(highCutInput.value);
-  const lowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
-  const highHz = highCutEnabled && Number.isFinite(high) ? high : null;
+  const requestedLowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
+  const requestedHighHz = highCutEnabled && Number.isFinite(high) ? high : null;
+  const validated = validateFilterCutoffs(samplingRate, requestedLowHz, requestedHighHz);
+  const lowHz = validated.lowHz;
+  const highHz = validated.highHz;
 
   if (lowHz !== null || highHz !== null) {
-    processed = butterworth4(trimmed, samplingRate, lowHz, highHz);
-    processed = rmsNormalize(trimmed, processed);
+    filtered = butterworth4(raw, samplingRate, lowHz, highHz);
+    filtered = rmsNormalize(raw, filtered, Math.ceil(samplingRate || 0));
 
     if (lowHz && highHz) filterLabel = "BP " + lowHz + "-" + highHz + " Hz";
     else if (lowHz) filterLabel = "HP " + lowHz + " Hz";
     else if (highHz) filterLabel = "LP " + highHz + " Hz";
     else filterLabel = "filter enabled";
   }
+
+  const intervals = parseIntervals(exclusionTable.value);
+  const processed = applyExclusions(filtered, intervals);
+  const trimmedEvents = adjustEvents(events, intervals);
 
   const wlLabel = currentWavelength === "wl1" ? "760 nm" : "850 nm";
   const chLabel = channelLabels[currentChannel];
@@ -623,13 +625,17 @@ function renderMeta() {
 
   const low = parseFloat(lowCutInput.value);
   const high = parseFloat(highCutInput.value);
-  const lowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
-  const highHz = highCutEnabled && Number.isFinite(high) ? high : null;
+  const requestedLowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
+  const requestedHighHz = highCutEnabled && Number.isFinite(high) ? high : null;
+  const validated = validateFilterCutoffs(samplingRate, requestedLowHz, requestedHighHz);
+  const lowHz = validated.lowHz;
+  const highHz = validated.highHz;
 
   let filterText = "off";
   if (lowHz !== null && highHz !== null) filterText = "BP " + lowHz + "-" + highHz + " Hz";
   else if (lowHz !== null) filterText = "HP " + lowHz + " Hz";
   else if (highHz !== null) filterText = "LP " + highHz + " Hz";
+  const filterWarning = validated.warning ? escapeHtml(validated.warning) : "";
 
   const labelText = (branchTagInput ? branchTagInput.value.trim() : "") || "none";
   let eventRows = "";
@@ -656,6 +662,7 @@ function renderMeta() {
     + "      <div class='text-slate-600'>Duration</div><div>" + (data.wl1.length / samplingRate).toFixed(2) + " s</div>"
     + "      <div class='text-slate-600'>Channels</div><div>" + data.wl1[0].length + "</div>"
     + "      <div class='text-slate-600'>Filter</div><div>" + escapeHtml(filterText) + "</div>"
+    + "      <div class='text-slate-600'>Filter note</div><div>" + (filterWarning || "none") + "</div>"
     + "      <div class='text-slate-600'>Protocol label</div><div>" + escapeHtml(labelText) + "</div>"
     + "      <div class='text-slate-600'>App version</div><div>" + APP_VERSION + "</div>"
     + "      <div class='text-slate-600'>Protocol schema</div><div>" + PROTOCOL_SCHEMA_VERSION + "</div>"
@@ -704,16 +711,13 @@ function buildProtocolObject() {
   const low = parseFloat(lowCutInput.value);
   const high = parseFloat(highCutInput.value);
 
-  const lowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
-  const highHz = highCutEnabled && Number.isFinite(high) ? high : null;
+  const requestedLowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
+  const requestedHighHz = highCutEnabled && Number.isFinite(high) ? high : null;
+  const validated = validateFilterCutoffs(samplingRate, requestedLowHz, requestedHighHz);
+  const lowHz = validated.lowHz;
+  const highHz = validated.highHz;
 
   const steps = [];
-
-  steps.push({
-    step: "trim",
-    enabled: true,
-    intervalsSeconds: intervals
-  });
 
   steps.push({
     step: "filter_butterworth_iir",
@@ -722,6 +726,12 @@ function buildProtocolObject() {
     lowHz: lowHz,
     highHz: highHz,
     amplitudePreservation: "rms_normalize_to_pre_filter"
+  });
+
+  steps.push({
+    step: "trim",
+    enabled: true,
+    intervalsSeconds: intervals
   });
 
   const protocol = {
@@ -788,7 +798,7 @@ function buildProtocolSummary(protocol) {
     filterPart += " amp=rms";
   }
 
-  return labelPart + "wl=" + wlTxt + " | ch=" + chLbl + " | " + trimPart + " | " + filterPart;
+  return labelPart + "wl=" + wlTxt + " | ch=" + chLbl + " | " + filterPart + " | " + trimPart;
 }
 
 function exportProtocol() {
@@ -974,8 +984,8 @@ function normalizeProtocol(raw) {
 
   if (!out.steps.length) {
     out.steps = [
-      { step: "trim", enabled: true, intervalsSeconds: [] },
-      { step: "filter_butterworth_iir", enabled: false, order: 4, lowHz: null, highHz: null, amplitudePreservation: "rms_normalize_to_pre_filter" }
+      { step: "filter_butterworth_iir", enabled: false, order: 4, lowHz: null, highHz: null, amplitudePreservation: "rms_normalize_to_pre_filter" },
+      { step: "trim", enabled: true, intervalsSeconds: [] }
     ];
   }
 
@@ -1052,12 +1062,22 @@ function base64DecodeUtf8(b64) {
   return decodeURIComponent(escape(atob(padded)));
 }
 
-function rmsNormalize(ref, x) {
+function rmsNormalize(ref, x, edgeSamples) {
+  const edge = Number.isFinite(edgeSamples) ? edgeSamples : 0;
+  const trimEdges = (arr, n) => {
+    if (!Number.isFinite(n) || n <= 0) return arr;
+    if (arr.length <= (2 * n + 4)) return arr;
+    return arr.slice(n, arr.length - n);
+  };
   const rms = a => Math.sqrt(a.reduce((sum, v) => sum + v * v, 0) / a.length);
-  const r0 = rms(ref);
-  const r1 = rms(x);
+  const refCore = trimEdges(ref, edge);
+  const xCore = trimEdges(x, edge);
+  const r0 = rms(refCore);
+  const r1 = rms(xCore);
   if (r1 === 0) return x;
-  return x.map(v => v * (r0 / r1));
+  const scale = r0 / r1;
+  const clampedScale = Math.max(0.25, Math.min(4.0, scale));
+  return x.map(v => v * clampedScale);
 }
 
 function extractChannelLabels(buf, expectedChannels) {
@@ -1185,4 +1205,55 @@ function formatStats(s) {
     " | sd " + s.sd.toFixed(2) +
     " | min " + s.min.toFixed(2) +
     " | max " + s.max.toFixed(2);
+}
+
+function validateFilterCutoffs(fs, lowHz, highHz) {
+  let low = lowHz;
+  let high = highHz;
+  const warnings = [];
+
+  if (!Number.isFinite(fs) || fs <= 0) {
+    if (low !== null || high !== null) {
+      warnings.push("Sampling rate is missing/invalid; filter disabled.");
+    }
+    return { lowHz: null, highHz: null, warning: warnings.join(" ") };
+  }
+
+  const nyq = fs / 2;
+  const minHz = Math.max(1e-6, nyq * 1e-6);
+  const maxHz = nyq * 0.95;
+
+  if (low !== null && low <= 0) {
+    warnings.push("Low cutoff must be > 0 Hz; clamped.");
+    low = minHz;
+  }
+
+  if (high !== null && high <= 0) {
+    warnings.push("High cutoff must be > 0 Hz; clamped.");
+    high = minHz;
+  }
+
+  if (low !== null && low >= nyq) {
+    warnings.push("Low cutoff must be below Nyquist (" + nyq.toFixed(3) + " Hz); clamped.");
+    low = maxHz;
+  }
+
+  if (high !== null && high >= nyq) {
+    warnings.push("High cutoff must be below Nyquist (" + nyq.toFixed(3) + " Hz); clamped.");
+    high = maxHz;
+  }
+
+  if (low !== null && high !== null && low >= high) {
+    warnings.push("Low cutoff was >= high cutoff; swapped.");
+    const tmp = low;
+    low = high;
+    high = tmp;
+  }
+
+  if (low !== null && high !== null && high - low < minHz) {
+    high = Math.min(maxHz, low + minHz);
+    warnings.push("Band limits were too close; high cutoff adjusted.");
+  }
+
+  return { lowHz: low, highHz: high, warning: warnings.join(" ") };
 }

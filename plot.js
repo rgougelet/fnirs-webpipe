@@ -64,16 +64,23 @@ function drawTicks(ctx, canvas, series, samplingRate) {
 
   ctx.font = "15px sans-serif";
   ctx.fillStyle = "#111827";
+  ctx.textBaseline = "top";
 
   for (let i = 0; i <= 10; i++) {
     const x = M.left + (i / 10) * w;
-    ctx.fillText((dur * i / 10).toFixed(1), x - 8, M.top + h + 20);
+    const tx = (dur * i / 10).toFixed(1);
+    if (i === 0) ctx.textAlign = "left";
+    else if (i === 10) ctx.textAlign = "right";
+    else ctx.textAlign = "center";
+    ctx.fillText(tx, x, M.top + h + 8);
   }
 
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
   for (let i = 0; i <= 6; i++) {
     const y = M.top + h - (i / 6) * h;
     const v = minY + (i / 6) * (maxY - minY);
-    ctx.fillText(v.toFixed(2), M.left - 45, y + 4);
+    ctx.fillText(v.toFixed(2), M.left - 10, y);
   }
 }
 
@@ -140,11 +147,15 @@ function drawEvents(ctx, canvas, events, nSamples, samplingRate) {
 function drawLabels(ctx, canvas) {
   ctx.fillStyle = "#111827";
   ctx.font = "16px sans-serif";
-  ctx.fillText("Time (s)", canvas.width / 2 - 30, canvas.height - 10);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText("Time (s)", canvas.width / 2, canvas.height - 6);
 
   ctx.save();
-  ctx.translate(M.left - 70, canvas.height / 2);
+  ctx.translate(M.left - 42, canvas.height / 2);
   ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
   ctx.fillText("Intensity (a.u.)", 0, 0);
   ctx.restore();
 }
