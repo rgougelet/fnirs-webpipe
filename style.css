@@ -76,6 +76,51 @@ canvas {
   background: #e0f2fe;
 }
 
+.wl-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wl-choice-btn {
+  display: inline-flex;
+  width: auto;
+  min-width: 64px;
+  justify-content: center;
+  text-align: center;
+  padding: 6px 12px;
+}
+
+.channel-group-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.channel-source-label {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  font-weight: 700;
+  color: #475569;
+  min-width: 30px;
+}
+
+.channel-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.channel-choice-btn {
+  display: inline-flex;
+  width: auto;
+  min-width: 54px;
+  justify-content: center;
+  text-align: center;
+  padding: 5px 10px;
+}
+
 .filter-toggle-btn {
   width: 44px;
   height: 34px;
@@ -150,7 +195,7 @@ canvas {
   }
 
   #protocolHost {
-    grid-template-columns: minmax(360px, 2.3fr) minmax(180px, 1.1fr) minmax(240px, 1.6fr);
+    grid-template-columns: minmax(320px, 2.1fr) minmax(170px, 1.0fr) minmax(220px, 1.4fr) minmax(170px, 1.0fr);
     align-items: stretch;
   }
 
@@ -172,7 +217,7 @@ canvas {
 
   #meta {
     flex: 0 0 auto;
-    max-height: 36%;
+    max-height: 22%;
     overflow: hidden;
     padding: 8px;
   }
@@ -292,6 +337,10 @@ body.theme-dark .choice-btn {
 body.theme-dark .choice-btn.active {
   background: #0c4a6e;
   border-color: #38bdf8;
+}
+
+body.theme-dark .channel-source-label {
+  color: #94a3b8;
 }
 
 body.theme-dark .filter-toggle-btn {

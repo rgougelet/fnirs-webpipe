@@ -61,26 +61,29 @@ function drawTicks(ctx, canvas, series, samplingRate) {
   const dur = series.length / samplingRate;
   const minY = Math.min(...series);
   const maxY = Math.max(...series);
+  const yRange = maxY - minY;
+  const yTickCount = getYTickCount(minY, maxY);
+  const xTickCount = getXTickCount(canvas.width);
 
   ctx.font = "15px sans-serif";
   ctx.fillStyle = "#111827";
   ctx.textBaseline = "top";
 
-  for (let i = 0; i <= 10; i++) {
-    const x = M.left + (i / 10) * w;
-    const tx = (dur * i / 10).toFixed(1);
+  for (let i = 0; i <= xTickCount; i++) {
+    const x = M.left + (i / xTickCount) * w;
+    const tx = (dur * i / xTickCount).toFixed(1);
     if (i === 0) ctx.textAlign = "left";
-    else if (i === 10) ctx.textAlign = "right";
+    else if (i === xTickCount) ctx.textAlign = "right";
     else ctx.textAlign = "center";
     ctx.fillText(tx, x, M.top + h + 8);
   }
 
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
-  for (let i = 0; i <= 6; i++) {
-    const y = M.top + h - (i / 6) * h;
-    const v = minY + (i / 6) * (maxY - minY);
-    ctx.fillText(v.toFixed(2), M.left - 10, y);
+  for (let i = 0; i <= yTickCount; i++) {
+    const y = M.top + h - (i / yTickCount) * h;
+    const v = yRange === 0 ? minY : (minY + (i / yTickCount) * yRange);
+    ctx.fillText(formatAxisNumber(v, yRange), M.left - 10, y);
   }
 }
 
@@ -158,6 +161,31 @@ function drawLabels(ctx, canvas) {
   ctx.textBaseline = "alphabetic";
   ctx.fillText("Intensity (a.u.)", 0, 0);
   ctx.restore();
+}
+
+function formatAxisNumber(v, span) {
+  if (!Number.isFinite(v)) return "NaN";
+  if (v === 0) return "0.00";
+  const abs = Math.abs(v);
+  if (abs < 0.005 || abs >= 1000) return v.toExponential(2);
+  if (span < 0.01) return v.toExponential(2);
+  if (abs >= 100) return v.toFixed(1);
+  if (abs >= 10) return v.toFixed(2);
+  if (span < 0.1) return v.toFixed(4);
+  if (span < 1) return v.toFixed(3);
+  return v.toFixed(2);
+}
+
+function getXTickCount(canvasWidth) {
+  if (canvasWidth < 700) return 6;
+  if (canvasWidth < 1000) return 8;
+  return 10;
+}
+
+function getYTickCount(minY, maxY) {
+  const maxAbs = Math.max(Math.abs(minY), Math.abs(maxY));
+  if (maxAbs < 0.01 || maxAbs >= 1000) return 4;
+  return 6;
 }
 
 

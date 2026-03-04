@@ -13,6 +13,7 @@ const outDir = path.resolve(process.cwd(), getArg("out", "screenshots"));
 const rootDir = path.resolve(process.cwd());
 const zipArg = getArg("zip", null);
 const nirxDirArg = getArg("nirx-dir", null);
+const includeMobile = getArg("include-mobile", "false") === "true";
 
 await mkdir(outDir, { recursive: true });
 
@@ -76,10 +77,10 @@ const browser = await chromium.launch({ headless: true });
 const ts = new Date().toISOString().replace(/[:.]/g, "-");
 
 try {
-  const targets = [
-    { name: "desktop", viewport: { width: 1440, height: 900 } },
-    { name: "mobile-landscape", viewport: { width: 844, height: 390 } }
-  ];
+  const targets = [{ name: "desktop", viewport: { width: 1440, height: 900 } }];
+  if (includeMobile) {
+    targets.push({ name: "mobile-landscape", viewport: { width: 844, height: 390 } });
+  }
 
   for (const t of targets) {
     const context = await browser.newContext({ viewport: t.viewport });

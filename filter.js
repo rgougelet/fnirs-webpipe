@@ -1,15 +1,24 @@
-function butterworth4(series, fs, lowHz, highHz) {
+function butterworth4(series, fs, lowHz, highHz, mode) {
+  const engine = mode === "sos" ? "sos" : "legacy";
   if (!lowHz && !highHz) return series.slice();
 
   let out = series.slice();
 
   if (lowHz && highHz) {
-    out = butterworthHigh(out, fs, lowHz);
-    out = butterworthLow(out, fs, highHz);
+    out = engine === "sos"
+      ? butterworthHighSos(out, fs, lowHz)
+      : butterworthHigh(out, fs, lowHz);
+    out = engine === "sos"
+      ? butterworthLowSos(out, fs, highHz)
+      : butterworthLow(out, fs, highHz);
   } else if (lowHz) {
-    out = butterworthHigh(out, fs, lowHz);
+    out = engine === "sos"
+      ? butterworthHighSos(out, fs, lowHz)
+      : butterworthHigh(out, fs, lowHz);
   } else if (highHz) {
-    out = butterworthLow(out, fs, highHz);
+    out = engine === "sos"
+      ? butterworthLowSos(out, fs, highHz)
+      : butterworthLow(out, fs, highHz);
   }
 
   return out;
@@ -41,6 +50,42 @@ function butterworthHigh(x, fs, fc) {
   return zeroPhaseBiquad(x, b0, b1, b2, a1, a2, fs);
 }
 
+function butterworthLowSos(x, fs, fc) {
+  const sec = designLowSection(fs, fc);
+  return zeroPhaseSos(x, [sec], fs);
+}
+
+function butterworthHighSos(x, fs, fc) {
+  const sec = designHighSection(fs, fc);
+  return zeroPhaseSos(x, [sec], fs);
+}
+
+function designLowSection(fs, fc) {
+  const ita = 1.0 / Math.tan(Math.PI * fc / fs);
+  const q = Math.SQRT2;
+
+  const b0 = 1.0 / (1.0 + q * ita + ita * ita);
+  const b1 = 2 * b0;
+  const b2 = b0;
+  const a1 = 2.0 * (ita * ita - 1.0) * b0;
+  const a2 = (1.0 - q * ita + ita * ita) * b0;
+
+  return [b0, b1, b2, a1, a2];
+}
+
+function designHighSection(fs, fc) {
+  const ita = Math.tan(Math.PI * fc / fs);
+  const q = Math.SQRT2;
+
+  const b0 = 1.0 / (1.0 + q * ita + ita * ita);
+  const b1 = -2 * b0;
+  const b2 = b0;
+  const a1 = 2.0 * (ita * ita - 1.0) * b0;
+  const a2 = (1.0 - q * ita + ita * ita) * b0;
+
+  return [b0, b1, b2, a1, a2];
+}
+
 function zeroPhaseBiquad(x, b0, b1, b2, a1, a2, fs) {
   if (!Array.isArray(x) || x.length < 3) return x.slice();
 
@@ -50,6 +95,21 @@ function zeroPhaseBiquad(x, b0, b1, b2, a1, a2, fs) {
   let y = iirFilter(padded, b0, b1, b2, a1, a2);
   y.reverse();
   y = iirFilter(y, b0, b1, b2, a1, a2);
+  y.reverse();
+
+  if (padLen === 0) return y;
+  return y.slice(padLen, padLen + x.length);
+}
+
+function zeroPhaseSos(x, sections, fs) {
+  if (!Array.isArray(x) || x.length < 3) return x.slice();
+
+  const padLen = computePadLength(x.length, fs);
+  const padded = padLen > 0 ? reflectPad(x, padLen) : x.slice();
+
+  let y = sosFilter(padded, sections);
+  y.reverse();
+  y = sosFilter(y, sections);
   y.reverse();
 
   if (padLen === 0) return y;
@@ -101,6 +161,37 @@ function iirFilter(x, b0, b1, b2, a1, a2) {
       b2 * x2 -
       a1 * y1 -
       a2 * y2;
+  }
+
+  return y;
+}
+
+function sosFilter(x, sections) {
+  let out = x.slice();
+  sections.forEach(sec => {
+    out = biquadDf2t(out, sec[0], sec[1], sec[2], sec[3], sec[4]);
+  });
+  return out;
+}
+
+function biquadDf2t(x, b0, b1, b2, a1, a2) {
+  const y = new Array(x.length).fill(0);
+  if (!x.length) return y;
+
+  const x0 = x[0];
+  const sumB = b0 + b1 + b2;
+  const denom = 1 + a1 + a2;
+  const y0 = Math.abs(denom) > 1e-12 ? x0 * (sumB / denom) : x0;
+
+  let z1 = y0 - b0 * x0;
+  let z2 = b2 * x0 - a2 * y0;
+
+  for (let i = 0; i < x.length; i++) {
+    const xn = x[i];
+    const yn = b0 * xn + z1;
+    z1 = b1 * xn - a1 * yn + z2;
+    z2 = b2 * xn - a2 * yn;
+    y[i] = yn;
   }
 
   return y;
