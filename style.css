@@ -14,14 +14,15 @@ canvas {
   align-items: center;
   justify-content: center;
 
-  padding: 8px 12px;
+  padding: 7px 11px;
   border: 1px solid #cbd5e1;
-  border-radius: 10px;
+  border-radius: 9px;
 
   background: #ffffff;
   color: #0f172a;
 
-  font-weight: 700;
+  font-weight: 650;
+  font-size: 0.88rem;
   line-height: 1;
 
   cursor: pointer;
@@ -47,8 +48,246 @@ canvas {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25), 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
+.top-card {
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 2px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.choice-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.choice-btn.active {
+  border-color: #0284c7;
+  background: #e0f2fe;
+}
+
+.filter-toggle-btn {
+  width: 44px;
+  height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.filter-toggle-btn.active {
+  border-color: #22c55e;
+  background: #dcfce7;
+}
+
+.filter-toggle-btn.inactive {
+  border-color: #ef4444;
+  background: #fee2e2;
+}
+
+.plot-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.plot-header {
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: #0f172a;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Optional: slightly tighter table feel inside meta */
 #meta table th,
 #meta table td {
   vertical-align: top;
+}
+
+@media (min-width: 1024px) {
+  body {
+    overflow: hidden;
+  }
+
+  #appShell {
+    display: grid;
+    grid-template-columns: 330px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top top"
+      "left plot";
+    gap: 8px;
+    overflow: hidden;
+    max-width: none;
+    width: 100vw;
+    height: 100vh;
+    padding: 10px 14px;
+    margin: 0;
+  }
+
+  #appShell > h1 { display: none; }
+
+  #topRow {
+    grid-area: top;
+    min-height: 0;
+    padding: 6px;
+    align-items: stretch;
+  }
+
+  #protocolHost {
+    grid-template-columns: minmax(360px, 2.3fr) minmax(180px, 1.1fr) minmax(240px, 1.6fr);
+    align-items: stretch;
+  }
+
+  #leftPanel {
+    grid-area: left;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  #controls {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    padding: 8px;
+  }
+
+  #meta {
+    flex: 0 0 auto;
+    max-height: 36%;
+    overflow: hidden;
+    padding: 8px;
+  }
+
+  #plotGrid {
+    grid-area: plot;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    align-self: stretch;
+    padding: 12px 12px 16px 12px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc !important;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 10px;
+    border-right: 8px solid #cbd5e1;
+  }
+
+  #plotGrid canvas {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1;
+    border-right: 4px solid #94a3b8;
+    width: 100%;
+    height: auto;
+    max-height: calc((100vh - 255px) / 2);
+    object-fit: contain;
+  }
+}
+
+body.theme-dark {
+  background: #0b1220 !important;
+  color: #e2e8f0 !important;
+}
+
+body.theme-dark #topRow,
+body.theme-dark #meta,
+body.theme-dark #controls,
+body.theme-dark #leftPanel {
+  background: #111827 !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+
+body.theme-dark #plotGrid {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  border-right: 12px solid #1e293b !important;
+  color: #0f172a !important;
+}
+
+body.theme-dark .bg-slate-50 {
+  background: #1e293b !important;
+}
+
+body.theme-dark .border-slate-200 {
+  border-color: #334155 !important;
+}
+
+body.theme-dark .text-slate-600 {
+  color: #94a3b8 !important;
+}
+
+body.theme-dark .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+
+body.theme-dark input,
+body.theme-dark textarea,
+body.theme-dark select {
+  background: #0f172a !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+
+body.theme-dark .btn {
+  background: #1f2b42;
+  color: #e2e8f0;
+  border-color: #3c4b61;
+}
+
+body.theme-dark .btn:hover {
+  background: #334155;
+}
+
+body.theme-dark .choice-btn {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-color: #334155;
+}
+
+body.theme-dark .choice-btn.active {
+  background: #0c4a6e;
+  border-color: #38bdf8;
+}
+
+body.theme-dark .filter-toggle-btn {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+body.theme-dark .filter-toggle-btn.active {
+  background: #14532d;
+  border-color: #22c55e;
+}
+
+body.theme-dark .filter-toggle-btn.inactive {
+  background: #7f1d1d;
+  border-color: #ef4444;
+}
+
+body.theme-dark .plot-header {
+  color: #e2e8f0;
+}
+
+body.theme-dark canvas {
+  background: #ffffff !important;
 }

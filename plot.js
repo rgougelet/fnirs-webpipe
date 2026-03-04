@@ -14,14 +14,14 @@ function drawPlot(ctx, canvas, series, samplingRate, overlays, events, title, st
   }
 
   drawLabels(ctx, canvas);
-  drawTitleAndStats(ctx, canvas, title, statsLine);
 }
 
 function drawGrid(ctx, canvas) {
   const w = canvas.width - M.left - M.right;
   const h = canvas.height - M.top - M.bottom;
 
-  ctx.strokeStyle = "#e5e7eb";
+  ctx.strokeStyle = "#d1d5db";
+  ctx.lineWidth = 1.2;
 
   for (let i = 0; i <= 10; i++) {
     const x = M.left + (i / 10) * w;
@@ -44,7 +44,8 @@ function drawAxes(ctx, canvas, series, samplingRate) {
   const w = canvas.width - M.left - M.right;
   const h = canvas.height - M.top - M.bottom;
 
-  ctx.strokeStyle = "#000";
+  ctx.strokeStyle = "#111827";
+  ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(M.left, M.top);
   ctx.lineTo(M.left, M.top + h);
@@ -61,8 +62,8 @@ function drawTicks(ctx, canvas, series, samplingRate) {
   const minY = Math.min(...series);
   const maxY = Math.max(...series);
 
-  ctx.font = "11px sans-serif";
-  ctx.fillStyle = "#000";
+  ctx.font = "15px sans-serif";
+  ctx.fillStyle = "#111827";
 
   for (let i = 0; i <= 10; i++) {
     const x = M.left + (i / 10) * w;
@@ -82,7 +83,8 @@ function drawSeries(ctx, canvas, series) {
   const minY = Math.min(...series);
   const maxY = Math.max(...series);
 
-  ctx.strokeStyle = "#111827";
+  ctx.strokeStyle = "#0f172a";
+  ctx.lineWidth = 1.8;
   ctx.beginPath();
 
   series.forEach((v, i) => {
@@ -116,7 +118,8 @@ function drawEvents(ctx, canvas, events, nSamples, samplingRate) {
 
   ctx.strokeStyle = "#dc2626";
   ctx.fillStyle = "#dc2626";
-  ctx.font = "11px sans-serif";
+  ctx.lineWidth = 1.4;
+  ctx.font = "13px sans-serif";
 
   events.forEach(e => {
     const x = M.left + (e.time / dur) * w;
@@ -135,7 +138,8 @@ function drawEvents(ctx, canvas, events, nSamples, samplingRate) {
 }
 
 function drawLabels(ctx, canvas) {
-  ctx.fillStyle = "#000";
+  ctx.fillStyle = "#111827";
+  ctx.font = "16px sans-serif";
   ctx.fillText("Time (s)", canvas.width / 2 - 30, canvas.height - 10);
 
   ctx.save();
@@ -145,15 +149,6 @@ function drawLabels(ctx, canvas) {
   ctx.restore();
 }
 
-function drawTitleAndStats(ctx, canvas, title, statsLine) {
-  ctx.fillStyle = "#000";
-
-  ctx.font = "17px sans-serif";
-  ctx.fillText(title, M.left, 18);
-
-  ctx.font = "12px sans-serif";
-  ctx.fillText(statsLine, M.left, 36);
-}
 
 function computeStats(series) {
   const sorted = [...series].sort((a, b) => a - b);

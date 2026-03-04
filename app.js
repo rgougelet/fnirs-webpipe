@@ -10,17 +10,22 @@ const protocolHost = document.getElementById("protocolHost");
 const plotGrid = document.getElementById("plotGrid");
 
 const canvasRaw = document.getElementById("plot");
+const PLOT_WIDTH = 1200;
+const PLOT_HEIGHT = 420;
+canvasRaw.width = PLOT_WIDTH;
+canvasRaw.height = PLOT_HEIGHT;
 const ctxRaw = canvasRaw.getContext("2d");
 canvasRaw.classList.add("w-full");
 
 const canvasTrim = document.createElement("canvas");
-canvasTrim.width = canvasRaw.width;
-canvasTrim.height = canvasRaw.height;
-canvasRaw.after(canvasTrim);
+canvasTrim.width = PLOT_WIDTH;
+canvasTrim.height = PLOT_HEIGHT;
 canvasTrim.classList.add("w-full");
 const ctxTrim = canvasTrim.getContext("2d");
 
-const M = { left: 90, right: 20, top: 40, bottom: 60 };
+const M = { left: 68, right: 12, top: 16, bottom: 48 };
+let rawPlotHeaderEl = null;
+let trimPlotHeaderEl = null;
 
 let samplingRate = null;
 let data = { wl1: null, wl2: null };
@@ -32,10 +37,12 @@ let currentWavelength = "wl1";
 let currentChannel = 0;
 
 let exclusionTable = null;
-let filterEnabled = false;
+let lowCutEnabled = true;
+let highCutEnabled = true;
 let lowCutInput = null;
 let highCutInput = null;
-let filterBox = null;
+let lowToggleBtn = null;
+let highToggleBtn = null;
 
 let notesInput = null;
 let branchTagInput = null;
@@ -59,8 +66,14 @@ let pendingProtocol = null;
 /* Protocol UI state */
 let protocolFilenameLabelEl = null;
 let lastProtocolFilename = "";
+let protocolSummaryEl = null;
+let themeToggleBtn = null;
+let currentTheme = "dark";
+const THEME_STORAGE_KEY = "fnirs-webpipe-theme";
 
+initTheme();
 input.addEventListener("change", handleInput);
+initPlotLayout();
 
 initUrlProtocolListener();
 
@@ -90,8 +103,37 @@ function resetUiOnly() {
   }
   controls.classList.add("hidden");
   controls.innerHTML = "";
+  protocolSummaryEl = null;
+  protocolFilenameLabelEl = null;
   ctxRaw.clearRect(0, 0, canvasRaw.width, canvasRaw.height);
   ctxTrim.clearRect(0, 0, canvasTrim.width, canvasTrim.height);
+}
+
+function applyTheme(theme) {
+  currentTheme = theme === "light" ? "light" : "dark";
+  document.body.classList.toggle("theme-dark", currentTheme === "dark");
+  if (themeToggleBtn) {
+    themeToggleBtn.textContent = currentTheme === "dark" ? "Dark: On" : "Dark: Off";
+  }
+}
+
+function setTheme(theme) {
+  applyTheme(theme);
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, currentTheme);
+  } catch (e) {}
+}
+
+function toggleTheme() {
+  setTheme(currentTheme === "dark" ? "light" : "dark");
+}
+
+function initTheme() {
+  let saved = null;
+  try {
+    saved = localStorage.getItem(THEME_STORAGE_KEY);
+  } catch (e) {}
+  applyTheme(saved === "light" ? "light" : "dark");
 }
 
 function resetAllState() {
@@ -104,7 +146,8 @@ function resetAllState() {
   currentWavelength = "wl1";
   currentChannel = 0;
 
-  filterEnabled = false;
+  lowCutEnabled = true;
+  highCutEnabled = true;
 
   sources = {
     hdr: null,
@@ -226,15 +269,18 @@ function loadFiles(files) {
 function buildControls() {
   controls.innerHTML = "";
   controls.classList.remove("hidden");
-  controls.className = "bg-white rounded p-4 flex flex-col gap-4";
+  controls.className = "bg-white rounded p-4 flex flex-col gap-3 border border-slate-200";
 
-  /* Protocol bar first */
+  /* Top protocol workspace cards */
   const protoBar = document.createElement("div");
-  protoBar.className = "flex flex-row flex-wrap gap-3 items-center";
+  protoBar.className = "top-card rounded border border-slate-200 bg-slate-50 p-2 flex items-center gap-2";
 
   const protoTitle = document.createElement("div");
-  protoTitle.className = "font-semibold";
-  protoTitle.textContent = "Protocol:";
+  protoTitle.className = "text-[11px] uppercase tracking-wide font-semibold text-slate-600 mr-1";
+  protoTitle.textContent = "Actions";
+
+  const btnGroup = document.createElement("div");
+  btnGroup.className = "flex items-center gap-1.5 flex-nowrap";
 
   const exportBtn = document.createElement("button");
   exportBtn.className = "btn";
@@ -256,140 +302,196 @@ function buildControls() {
   copyLinkBtn.textContent = "Link";
   copyLinkBtn.onclick = copyProtocolLink;
 
+  themeToggleBtn = document.createElement("button");
+  themeToggleBtn.className = "btn";
+  themeToggleBtn.onclick = toggleTheme;
+  applyTheme(currentTheme);
+
   protocolFilenameLabelEl = document.createElement("div");
-  protocolFilenameLabelEl.className = "text-sm text-slate-600 ml-2";
+  protocolFilenameLabelEl.className = "text-xs text-slate-600 ml-auto truncate";
   updateProtocolFilenameLabel();
 
   protoBar.appendChild(protoTitle);
-  protoBar.appendChild(exportBtn);
-  protoBar.appendChild(importBtn);
-  protoBar.appendChild(resetBtn);
-  protoBar.appendChild(copyLinkBtn);
+  btnGroup.appendChild(exportBtn);
+  btnGroup.appendChild(importBtn);
+  btnGroup.appendChild(resetBtn);
+  btnGroup.appendChild(copyLinkBtn);
+  btnGroup.appendChild(themeToggleBtn);
+  protoBar.appendChild(btnGroup);
   protoBar.appendChild(protocolFilenameLabelEl);
 
-  const grid = document.createElement("div");
-  grid.className = "flex flex-wrap gap-8 items-start";
-
-  const wlDiv = document.createElement("div");
-  wlDiv.className = "flex flex-col space-y-1";
-  wlDiv.innerHTML = "<div class='font-semibold'>Wavelength</div>";
-
-  ["wl1", "wl2"].forEach((wl, i) => {
-    const label = document.createElement("label");
-    label.className = "inline-flex items-center space-x-2";
-
-    const r = document.createElement("input");
-    r.type = "radio";
-    r.name = "wavelength";
-    r.checked = (currentWavelength === wl) || (i === 0 && currentWavelength === "wl1");
-    r.onchange = () => { currentWavelength = wl; redraw(); renderMeta(); };
-
-    label.appendChild(r);
-    label.appendChild(document.createTextNode(wl === "wl1" ? "760 nm" : "850 nm"));
-    wlDiv.appendChild(label);
-  });
-
-  const chDiv = document.createElement("div");
-  chDiv.className = "flex flex-col space-y-1 max-h-60 overflow-y-auto";
-  chDiv.innerHTML = "<div class='font-semibold'>Channel</div>";
-
-  channelLabels.forEach((lbl, i) => {
-    const label = document.createElement("label");
-    label.className = "inline-flex items-center space-x-2";
-
-    const r = document.createElement("input");
-    r.type = "radio";
-    r.name = "channel";
-    r.checked = (i === currentChannel);
-    r.onchange = () => { currentChannel = i; redraw(); renderMeta(); };
-
-    label.appendChild(r);
-    label.appendChild(document.createTextNode(lbl));
-    chDiv.appendChild(label);
-  });
-
-  const exDiv = document.createElement("div");
-  exDiv.className = "flex flex-col space-y-1";
-  exDiv.innerHTML = "<div class='font-semibold'>Exclude intervals (s)</div>";
-
-  exclusionTable = document.createElement("textarea");
-  exclusionTable.rows = 4;
-  exclusionTable.placeholder = "start,end";
-  exclusionTable.oninput = () => { redraw(); renderMeta(); };
-  exclusionTable.style.minWidth = "220px";
-  exclusionTable.className = "p-2 border rounded bg-white";
-  exDiv.appendChild(exclusionTable);
-
-  const fDiv = document.createElement("div");
-  fDiv.className = "flex flex-col space-y-1";
-  fDiv.innerHTML = "<div class='font-semibold'>Butterworth filter (4th)</div>";
-
-  const fCheck = document.createElement("label");
-  fCheck.className = "inline-flex items-center space-x-2";
-
-  filterBox = document.createElement("input");
-  filterBox.type = "checkbox";
-  filterBox.onchange = () => { filterEnabled = filterBox.checked; redraw(); renderMeta(); };
-
-  fCheck.appendChild(filterBox);
-  fCheck.appendChild(document.createTextNode("enable"));
-
-  lowCutInput = document.createElement("input");
-  lowCutInput.type = "number";
-  lowCutInput.step = "0.01";
-  lowCutInput.placeholder = "Low Hz";
-  lowCutInput.oninput = () => { redraw(); renderMeta(); };
-  lowCutInput.className = "p-2 border rounded bg-white";
-
-  highCutInput = document.createElement("input");
-  highCutInput.type = "number";
-  highCutInput.step = "0.01";
-  highCutInput.placeholder = "High Hz";
-  highCutInput.oninput = () => { redraw(); renderMeta(); };
-  highCutInput.className = "p-2 border rounded bg-white";
-
-  fDiv.appendChild(fCheck);
-  fDiv.appendChild(lowCutInput);
-  fDiv.appendChild(highCutInput);
-
-  const protoDiv = document.createElement("div");
-  protoDiv.className = "flex flex-col space-y-2";
-
-  const branchLabel = document.createElement("div");
-  branchLabel.className = "font-semibold";
-  branchLabel.textContent = "Protocol label";
-
+  const labelCard = document.createElement("div");
+  labelCard.className = "top-card rounded border border-slate-200 bg-slate-50 p-2";
+  const labelTitle = document.createElement("div");
+  labelTitle.className = "text-[11px] uppercase tracking-wide font-semibold text-slate-600 mb-1";
+  labelTitle.textContent = "Protocol Label";
   branchTagInput = document.createElement("input");
   branchTagInput.type = "text";
   branchTagInput.placeholder = "e.g., fs32, qc1, motionTrim";
   branchTagInput.oninput = renderMeta;
-  branchTagInput.className = "p-2 border rounded bg-white";
+  branchTagInput.className = "p-2 border rounded bg-white w-full";
+  labelCard.appendChild(labelTitle);
+  labelCard.appendChild(branchTagInput);
 
+  const summaryCard = document.createElement("div");
+  summaryCard.className = "top-card rounded border border-slate-200 bg-slate-50 p-2";
+  const summaryTitle = document.createElement("div");
+  summaryTitle.className = "text-[11px] uppercase tracking-wide font-semibold text-slate-600 mb-1";
+  summaryTitle.textContent = "Protocol Summary";
+  protocolSummaryEl = document.createElement("div");
+  protocolSummaryEl.className = "text-[13px] leading-tight whitespace-pre-wrap max-h-12 overflow-y-auto text-slate-700";
+  protocolSummaryEl.textContent = "No protocol summary yet.";
+  summaryCard.appendChild(summaryTitle);
+  summaryCard.appendChild(protocolSummaryEl);
+
+  const grid = document.createElement("div");
+  grid.className = "grid grid-cols-1 gap-2 items-start";
+
+  const selectRow = document.createElement("div");
+  selectRow.className = "grid grid-cols-2 gap-2";
+
+  const wlDiv = document.createElement("div");
+  wlDiv.className = "rounded border border-slate-200 p-3 flex flex-col space-y-1";
+  wlDiv.innerHTML = "<div class='font-semibold'>Wavelength</div>";
+
+  ["wl1", "wl2"].forEach((wl) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "choice-btn";
+    b.dataset.wlChoice = wl;
+    b.textContent = wl === "wl1" ? "760 nm" : "850 nm";
+    b.onclick = () => {
+      currentWavelength = wl;
+      rebuildRadioSelections();
+      redraw();
+      renderMeta();
+    };
+    wlDiv.appendChild(b);
+  });
+
+  const chDiv = document.createElement("div");
+  chDiv.className = "rounded border border-slate-200 p-3 flex flex-col space-y-1 overflow-y-auto";
+  chDiv.style.minHeight = "150px";
+  chDiv.style.maxHeight = "180px";
+  chDiv.innerHTML = "<div class='font-semibold'>Channel</div>";
+
+  channelLabels.forEach((lbl, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "choice-btn";
+    b.dataset.chChoice = String(i);
+    b.textContent = lbl;
+    b.onclick = () => {
+      currentChannel = i;
+      rebuildRadioSelections();
+      redraw();
+      renderMeta();
+    };
+    chDiv.appendChild(b);
+  });
+
+  const processRow = document.createElement("div");
+  processRow.className = "grid grid-cols-2 gap-2";
+
+  const exDiv = document.createElement("div");
+  exDiv.className = "rounded border border-slate-200 p-3 flex flex-col space-y-1";
+  exDiv.innerHTML = "<div class='font-semibold'>Cut intervals (s)</div>";
+
+  exclusionTable = document.createElement("textarea");
+  exclusionTable.rows = 2;
+  exclusionTable.placeholder = "23, 25\n34, 36";
+  exclusionTable.oninput = () => { redraw(); renderMeta(); };
+  exclusionTable.className = "p-2 border rounded bg-white w-full";
+  exDiv.appendChild(exclusionTable);
+
+  const fDiv = document.createElement("div");
+  fDiv.className = "rounded border border-slate-200 p-3 flex flex-col space-y-1";
+  fDiv.innerHTML = "<div class='font-semibold'>Butterworth filter (4th)</div>";
+
+  lowCutInput = document.createElement("input");
+  lowCutInput.type = "text";
+  lowCutInput.inputMode = "decimal";
+  lowCutInput.placeholder = "0.1";
+  lowCutInput.oninput = () => { redraw(); renderMeta(); };
+  lowCutInput.className = "p-2 border rounded bg-white w-full";
+  lowCutInput.value = "0.1";
+  const lowLbl = document.createElement("div");
+  lowLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
+  lowLbl.textContent = "Low:";
+  lowToggleBtn = document.createElement("button");
+  lowToggleBtn.type = "button";
+  lowToggleBtn.className = "filter-toggle-btn";
+  lowToggleBtn.onclick = () => {
+    lowCutEnabled = !lowCutEnabled;
+    updateFilterToggleButtons();
+    redraw();
+    renderMeta();
+  };
+  const lowRow = document.createElement("div");
+  lowRow.className = "grid grid-cols-[auto_56px_auto] gap-2 items-center";
+  lowRow.appendChild(lowLbl);
+  lowRow.appendChild(lowCutInput);
+  lowRow.appendChild(lowToggleBtn);
+
+  highCutInput = document.createElement("input");
+  highCutInput.type = "text";
+  highCutInput.inputMode = "decimal";
+  highCutInput.placeholder = "10.0";
+  highCutInput.oninput = () => { redraw(); renderMeta(); };
+  highCutInput.className = "p-2 border rounded bg-white w-full";
+  highCutInput.value = "10.0";
+  const highLbl = document.createElement("div");
+  highLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
+  highLbl.textContent = "High:";
+  highToggleBtn = document.createElement("button");
+  highToggleBtn.type = "button";
+  highToggleBtn.className = "filter-toggle-btn";
+  highToggleBtn.onclick = () => {
+    highCutEnabled = !highCutEnabled;
+    updateFilterToggleButtons();
+    redraw();
+    renderMeta();
+  };
+  const highRow = document.createElement("div");
+  highRow.className = "grid grid-cols-[auto_56px_auto] gap-2 items-center";
+  highRow.appendChild(highLbl);
+  highRow.appendChild(highCutInput);
+  highRow.appendChild(highToggleBtn);
+
+  fDiv.appendChild(lowRow);
+  fDiv.appendChild(highRow);
+  const notesDiv = document.createElement("div");
+  notesDiv.className = "rounded border border-slate-200 p-3 flex flex-col space-y-2";
   const notesLabel = document.createElement("div");
   notesLabel.className = "font-semibold";
   notesLabel.textContent = "Notes";
-
   notesInput = document.createElement("textarea");
-  notesInput.rows = 10;
+  notesInput.rows = 3;
   notesInput.placeholder = "Notes about processing choices, rationale, caveats...";
   notesInput.oninput = renderMeta;
-  notesInput.style.minWidth = "340px";
-  notesInput.className = "p-2 border rounded bg-white";
+  notesInput.style.maxHeight = "120px";
+  notesInput.style.overflowY = "auto";
+  notesInput.style.resize = "vertical";
+  notesInput.className = "p-2 border rounded bg-white w-full text-sm";
+  notesDiv.appendChild(notesLabel);
+  notesDiv.appendChild(notesInput);
 
-  protoDiv.appendChild(branchLabel);
-  protoDiv.appendChild(branchTagInput);
-  protoDiv.appendChild(notesLabel);
-  protoDiv.appendChild(notesInput);
-
-  grid.appendChild(wlDiv);
-  grid.appendChild(chDiv);
-  grid.appendChild(exDiv);
-  grid.appendChild(fDiv);
-  grid.appendChild(protoDiv);
+  selectRow.appendChild(wlDiv);
+  selectRow.appendChild(chDiv);
+  processRow.appendChild(exDiv);
+  processRow.appendChild(fDiv);
+  grid.appendChild(notesDiv);
+  grid.appendChild(selectRow);
+  grid.appendChild(processRow);
+  rebuildRadioSelections();
+  updateFilterToggleButtons();
 
   if (protocolHost) {
   protocolHost.innerHTML = "";
+  protocolHost.className = "min-w-[280px] w-full lg:col-span-3 grid grid-cols-3 gap-2";
   protocolHost.appendChild(protoBar);
+  protocolHost.appendChild(labelCard);
+  protocolHost.appendChild(summaryCard);
   protocolHost.classList.remove("hidden");
   }
 
@@ -405,6 +507,24 @@ function updateProtocolFilenameLabel() {
   protocolFilenameLabelEl.textContent = "file: " + lastProtocolFilename;
 }
 
+function updateProtocolSummaryLabel(text) {
+  if (!protocolSummaryEl) return;
+  protocolSummaryEl.textContent = text || "No protocol summary yet.";
+}
+
+function updateFilterToggleButtons() {
+  if (lowToggleBtn) {
+    lowToggleBtn.textContent = lowCutEnabled ? "✅" : "❌";
+    lowToggleBtn.classList.toggle("active", lowCutEnabled);
+    lowToggleBtn.classList.toggle("inactive", !lowCutEnabled);
+  }
+  if (highToggleBtn) {
+    highToggleBtn.textContent = highCutEnabled ? "✅" : "❌";
+    highToggleBtn.classList.toggle("active", highCutEnabled);
+    highToggleBtn.classList.toggle("inactive", !highCutEnabled);
+  }
+}
+
 function resetProtocolUiOnly() {
   if (!data.wl1) return;
 
@@ -416,10 +536,11 @@ function resetProtocolUiOnly() {
 
   if (exclusionTable) exclusionTable.value = "";
 
-  filterEnabled = false;
-  if (filterBox) filterBox.checked = false;
-  if (lowCutInput) lowCutInput.value = "";
-  if (highCutInput) highCutInput.value = "";
+  lowCutEnabled = true;
+  highCutEnabled = true;
+  updateFilterToggleButtons();
+  if (lowCutInput) lowCutInput.value = "0.1";
+  if (highCutInput) highCutInput.value = "10.0";
 
   lastProtocolFilename = "";
   updateProtocolFilenameLabel();
@@ -443,12 +564,12 @@ function redraw() {
   let processed = trimmed.slice();
   let filterLabel = "no filter";
 
-  if (filterEnabled) {
-    const low = parseFloat(lowCutInput.value);
-    const high = parseFloat(highCutInput.value);
-    const lowHz = Number.isFinite(low) ? low : null;
-    const highHz = Number.isFinite(high) ? high : null;
+  const low = parseFloat(lowCutInput.value);
+  const high = parseFloat(highCutInput.value);
+  const lowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
+  const highHz = highCutEnabled && Number.isFinite(high) ? high : null;
 
+  if (lowHz !== null || highHz !== null) {
     processed = butterworth4(trimmed, samplingRate, lowHz, highHz);
     processed = rmsNormalize(trimmed, processed);
 
@@ -460,6 +581,8 @@ function redraw() {
 
   const wlLabel = currentWavelength === "wl1" ? "760 nm" : "850 nm";
   const chLabel = channelLabels[currentChannel];
+  if (rawPlotHeaderEl) rawPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Raw | " + formatStats(computeStats(raw));
+  if (trimPlotHeaderEl) trimPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Trimmed (" + filterLabel + ") | " + formatStats(computeStats(processed));
 
   drawPlot(
     ctxRaw,
@@ -490,6 +613,7 @@ function renderMeta() {
   if (!data.wl1 || !samplingRate) return;
 
   const summary = buildProtocolSummary(buildProtocolObject());
+  updateProtocolSummaryLabel(summary);
 
   const bHdr = basename(sources.hdr) || "missing";
   const bWl1 = basename(sources.wl1) || "missing";
@@ -499,88 +623,71 @@ function renderMeta() {
 
   const low = parseFloat(lowCutInput.value);
   const high = parseFloat(highCutInput.value);
-  const lowHz = Number.isFinite(low) ? low : null;
-  const highHz = Number.isFinite(high) ? high : null;
+  const lowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
+  const highHz = highCutEnabled && Number.isFinite(high) ? high : null;
 
   let filterText = "off";
-  if (filterEnabled) {
-    if (lowHz && highHz) filterText = "enabled (BP " + lowHz + "-" + highHz + " Hz)";
-    else if (lowHz) filterText = "enabled (HP " + lowHz + " Hz)";
-    else if (highHz) filterText = "enabled (LP " + highHz + " Hz)";
-    else filterText = "enabled";
-  }
+  if (lowHz !== null && highHz !== null) filterText = "BP " + lowHz + "-" + highHz + " Hz";
+  else if (lowHz !== null) filterText = "HP " + lowHz + " Hz";
+  else if (highHz !== null) filterText = "LP " + highHz + " Hz";
 
   const labelText = (branchTagInput ? branchTagInput.value.trim() : "") || "none";
-  const notesText = notesInput ? notesInput.value : "";
-
-  let html = ""
-    + "<div class='grid grid-cols-1 md:grid-cols-2 gap-6'>"
-    + "  <div>"
-    + "    <div class='font-semibold mb-2'>Recording Summary</div>"
-    + "    <div class='grid grid-cols-2 gap-2 text-sm'>"
-    + "      <div>Dataset</div><div>" + escapeHtml(datasetLabel) + "</div>"
-    + "      <div>Input type</div><div>" + escapeHtml(inputTypeLabel) + "</div>"
-    + "      <div>Sampling rate</div><div>" + samplingRate + " Hz</div>"
-    + "      <div>Samples</div><div>" + data.wl1.length + "</div>"
-    + "      <div>Duration</div><div>" + (data.wl1.length / samplingRate).toFixed(2) + " s</div>"
-    + "      <div>Channels</div><div>" + data.wl1[0].length + "</div>"
-    + "      <div>Filter</div><div>" + escapeHtml(filterText) + "</div>"
-    + "      <div>Protocol label</div><div>" + escapeHtml(labelText) + "</div>"
-    + "      <div>App version</div><div>" + APP_VERSION + "</div>"
-    + "      <div>Protocol schema</div><div>" + PROTOCOL_SCHEMA_VERSION + "</div>"
-    + "    </div>"
-    + "    <div class='mt-3'>"
-    + "      <div class='font-semibold mb-1'>Protocol summary</div>"
-    + "      <div class='text-sm whitespace-pre-wrap'>" + escapeHtml(summary) + "</div>"
-    + "    </div>"
-    + "    <div class='mt-3'>"
-    + "      <div class='font-semibold mb-1'>Sources</div>"
-    + "      <div class='grid grid-cols-2 gap-2 text-sm'>"
-    + "        <div>HDR</div><div>" + escapeHtml(bHdr) + "</div>"
-    + "        <div>WL1</div><div>" + escapeHtml(bWl1) + "</div>"
-    + "        <div>WL2</div><div>" + escapeHtml(bWl2) + "</div>"
-    + "        <div>EVT</div><div>" + escapeHtml(bEvt) + "</div>"
-    + "        <div>probeInfo</div><div>" + escapeHtml(bProbe) + "</div>"
-    + "        <div>Sampling rate from</div><div>" + escapeHtml(basename(sources.samplingRateFrom) || "?") + "</div>"
-    + "        <div>Events from</div><div>" + escapeHtml(basename(sources.eventsFrom) || "?") + "</div>"
-    + "        <div>Channel labels from</div><div>" + escapeHtml(basename(sources.channelLabelsFrom) || "?") + "</div>"
-    + "      </div>"
-    + "    </div>"
-    + "    <div class='mt-3'>"
-    + "      <div class='font-semibold mb-1'>Notes</div>"
-    + "      <div class='text-sm whitespace-pre-wrap'>" + escapeHtml(notesText) + "</div>"
-    + "    </div>"
-    + "  </div>"
-    + "  <div>"
-    + "    <div class='font-semibold mb-2'>Events</div>"
-    + "    <table class='w-full text-sm border-collapse' style='table-layout: fixed;'>"
-    + "      <thead>"
-    + "        <tr>"
-    + "          <th class='border px-2 py-1' style='width: 80px;'>Time (s)</th>"
-    + "          <th class='border px-2 py-1' style='width: 60px;'>Code</th>"
-    + "        </tr>"
-    + "      </thead>"
-    + "      <tbody>";
-
+  let eventRows = "";
   if (!events.length) {
-    html += ""
-      + "<tr>"
-      + "  <td class='border px-2 py-2 text-slate-600' colspan='2'>No events found</td>"
-      + "</tr>";
+    eventRows = "<tr><td class='border px-2 py-2 text-slate-600' colspan='2'>No events found</td></tr>";
   } else {
     events.forEach(e => {
-      html += ""
-        + "<tr>"
-        + "  <td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + (e.sample / samplingRate).toFixed(2) + "</td>"
-        + "  <td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + e.code + "</td>"
+      eventRows += "<tr>"
+        + "<td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + (e.sample / samplingRate).toFixed(2) + "</td>"
+        + "<td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + e.code + "</td>"
         + "</tr>";
     });
   }
 
-  html += ""
+  const html = ""
+    + "<div class='space-y-2'>"
+    + "  <details class='rounded border border-slate-200 p-2'>"
+    + "    <summary class='font-semibold cursor-pointer select-none'>Recording Summary</summary>"
+    + "    <div class='grid grid-cols-2 gap-x-3 gap-y-1 text-sm mt-2'>"
+    + "      <div class='text-slate-600'>Dataset</div><div class='break-all'>" + escapeHtml(datasetLabel) + "</div>"
+    + "      <div class='text-slate-600'>Input type</div><div>" + escapeHtml(inputTypeLabel) + "</div>"
+    + "      <div class='text-slate-600'>Sampling rate</div><div>" + samplingRate + " Hz</div>"
+    + "      <div class='text-slate-600'>Samples</div><div>" + data.wl1.length + "</div>"
+    + "      <div class='text-slate-600'>Duration</div><div>" + (data.wl1.length / samplingRate).toFixed(2) + " s</div>"
+    + "      <div class='text-slate-600'>Channels</div><div>" + data.wl1[0].length + "</div>"
+    + "      <div class='text-slate-600'>Filter</div><div>" + escapeHtml(filterText) + "</div>"
+    + "      <div class='text-slate-600'>Protocol label</div><div>" + escapeHtml(labelText) + "</div>"
+    + "      <div class='text-slate-600'>App version</div><div>" + APP_VERSION + "</div>"
+    + "      <div class='text-slate-600'>Protocol schema</div><div>" + PROTOCOL_SCHEMA_VERSION + "</div>"
+    + "    </div>"
+    + "  </details>"
+    + "  <details class='rounded border border-slate-200 p-2'>"
+    + "    <summary class='font-semibold cursor-pointer select-none'>File Sources</summary>"
+    + "    <div class='grid grid-cols-2 gap-x-3 gap-y-1 text-sm mt-2'>"
+    + "      <div class='text-slate-600'>HDR</div><div>" + escapeHtml(bHdr) + "</div>"
+    + "      <div class='text-slate-600'>WL1</div><div>" + escapeHtml(bWl1) + "</div>"
+    + "      <div class='text-slate-600'>WL2</div><div>" + escapeHtml(bWl2) + "</div>"
+    + "      <div class='text-slate-600'>EVT</div><div>" + escapeHtml(bEvt) + "</div>"
+    + "      <div class='text-slate-600'>probeInfo</div><div>" + escapeHtml(bProbe) + "</div>"
+    + "      <div class='text-slate-600'>Sampling rate from</div><div>" + escapeHtml(basename(sources.samplingRateFrom) || "?") + "</div>"
+    + "      <div class='text-slate-600'>Events from</div><div>" + escapeHtml(basename(sources.eventsFrom) || "?") + "</div>"
+    + "      <div class='text-slate-600'>Channel labels from</div><div>" + escapeHtml(basename(sources.channelLabelsFrom) || "?") + "</div>"
+    + "    </div>"
+    + "  </details>"
+    + "  <details class='rounded border border-slate-200 p-2'>"
+    + "    <summary class='font-semibold cursor-pointer select-none'>Events</summary>"
+    + "    <table class='w-full text-sm border-collapse mt-2' style='table-layout: fixed;'>"
+    + "      <thead>"
+    + "        <tr class='bg-slate-50'>"
+    + "          <th class='border px-2 py-1 text-left' style='width: 80px;'>Time (s)</th>"
+    + "          <th class='border px-2 py-1 text-left' style='width: 60px;'>Code</th>"
+    + "        </tr>"
+    + "      </thead>"
+    + "      <tbody>"
+    + eventRows
     + "      </tbody>"
     + "    </table>"
-    + "  </div>"
+    + "  </details>"
     + "</div>";
 
   metaDiv.innerHTML = html;
@@ -597,8 +704,8 @@ function buildProtocolObject() {
   const low = parseFloat(lowCutInput.value);
   const high = parseFloat(highCutInput.value);
 
-  const lowHz = Number.isFinite(low) ? low : null;
-  const highHz = Number.isFinite(high) ? high : null;
+  const lowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
+  const highHz = highCutEnabled && Number.isFinite(high) ? high : null;
 
   const steps = [];
 
@@ -610,7 +717,7 @@ function buildProtocolObject() {
 
   steps.push({
     step: "filter_butterworth_iir",
-    enabled: !!filterEnabled,
+    enabled: (lowHz !== null || highHz !== null),
     order: 4,
     lowHz: lowHz,
     highHz: highHz,
@@ -760,16 +867,17 @@ function applyProtocol(protocol) {
 
   const f = (p.steps || []).find(s => s.step === "filter_butterworth_iir");
   if (f && f.enabled) {
-    filterEnabled = true;
-    if (filterBox) filterBox.checked = true;
-    lowCutInput.value = (f.lowHz === null || typeof f.lowHz === "undefined") ? "" : String(f.lowHz);
-    highCutInput.value = (f.highHz === null || typeof f.highHz === "undefined") ? "" : String(f.highHz);
+    lowCutEnabled = (f.lowHz !== null && typeof f.lowHz !== "undefined");
+    highCutEnabled = (f.highHz !== null && typeof f.highHz !== "undefined");
+    lowCutInput.value = (f.lowHz === null || typeof f.lowHz === "undefined") ? "0.1" : String(f.lowHz);
+    highCutInput.value = (f.highHz === null || typeof f.highHz === "undefined") ? "10.0" : String(f.highHz);
   } else {
-    filterEnabled = false;
-    if (filterBox) filterBox.checked = false;
-    lowCutInput.value = "";
-    highCutInput.value = "";
+    lowCutEnabled = true;
+    highCutEnabled = true;
+    lowCutInput.value = "0.1";
+    highCutInput.value = "10.0";
   }
+  updateFilterToggleButtons();
 
   rebuildRadioSelections();
   renderMeta();
@@ -1025,15 +1133,39 @@ function defaultChannelLabels() {
 }
 
 function rebuildRadioSelections() {
-  const wls = document.querySelectorAll("input[name='wavelength']");
-  wls.forEach(r => {
-    const txt = (r.parentElement && r.parentElement.textContent) ? r.parentElement.textContent : "";
-    if (currentWavelength === "wl1") r.checked = txt.indexOf("760") !== -1;
-    if (currentWavelength === "wl2") r.checked = txt.indexOf("850") !== -1;
+  const wlButtons = document.querySelectorAll("button[data-wl-choice]");
+  wlButtons.forEach(b => {
+    const active = b.dataset.wlChoice === currentWavelength;
+    b.classList.toggle("active", active);
   });
 
-  const ch = document.querySelectorAll("input[name='channel']");
-  ch.forEach((r, i) => { r.checked = i === currentChannel; });
+  const chButtons = document.querySelectorAll("button[data-ch-choice]");
+  chButtons.forEach(b => {
+    const active = Number(b.dataset.chChoice) === currentChannel;
+    b.classList.toggle("active", active);
+  });
+}
+
+function initPlotLayout() {
+  const rawPanel = document.createElement("div");
+  rawPanel.className = "plot-panel";
+  rawPlotHeaderEl = document.createElement("div");
+  rawPlotHeaderEl.className = "plot-header";
+  rawPlotHeaderEl.textContent = "Raw";
+  rawPanel.appendChild(rawPlotHeaderEl);
+  rawPanel.appendChild(canvasRaw);
+
+  const trimPanel = document.createElement("div");
+  trimPanel.className = "plot-panel";
+  trimPlotHeaderEl = document.createElement("div");
+  trimPlotHeaderEl.className = "plot-header";
+  trimPlotHeaderEl.textContent = "Trimmed";
+  trimPanel.appendChild(trimPlotHeaderEl);
+  trimPanel.appendChild(canvasTrim);
+
+  plotGrid.innerHTML = "";
+  plotGrid.appendChild(rawPanel);
+  plotGrid.appendChild(trimPanel);
 }
 
 function computeStats(series) {

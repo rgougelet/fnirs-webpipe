@@ -1,0 +1,15 @@
+{
+  "name": "fnirs-webpipe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "node scripts/dev-server.mjs",
+    "ui:capture": "node scripts/capture-ui.mjs",
+    "ui:capture:light": "node scripts/capture-ui.mjs --theme light",
+    "ui:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "playwright": "^1.53.0"
+  }
+}
