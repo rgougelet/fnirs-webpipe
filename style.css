@@ -126,7 +126,7 @@ canvas {
 
   #appShell {
     display: grid;
-    grid-template-columns: 330px minmax(0, 1fr);
+    grid-template-columns: 380px minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
       "top top"
@@ -203,6 +203,26 @@ canvas {
   }
 }
 
+#meta::before,
+#controls::before {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: #475569;
+}
+
+#meta::before {
+  content: "Meta";
+}
+
+#controls::before {
+  content: "Controls";
+}
+
 body.theme-dark {
   background: #0b1220 !important;
   color: #e2e8f0 !important;
@@ -238,6 +258,11 @@ body.theme-dark .text-slate-600 {
 
 body.theme-dark .text-slate-700 {
   color: #e2e8f0 !important;
+}
+
+body.theme-dark #meta::before,
+body.theme-dark #controls::before {
+  color: #94a3b8;
 }
 
 body.theme-dark input,
