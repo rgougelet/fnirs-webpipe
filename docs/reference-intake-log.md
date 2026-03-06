@@ -50,3 +50,32 @@
 - Intake assumptions are based on your instruction that these repos are mostly your own code.
 - Any nested `deps/`/`toolboxes/` components are treated as third-party unless confirmed otherwise.
 - Before direct code lift from nested dependency folders, add/update `THIRD_PARTY_NOTICES.md`.
+
+## Batch: 2026-03-06 (NIRS-KIT)
+
+### 6) `NIRS-KIT-main.zip` + `NIRS-KIT.pdf`
+- Source: local files in `references/`
+- Unpacked path: `references/unpacked/NIRS-KIT-main/NIRS-KIT-main`
+- Intended usage mode: `reference_only` for method design, `adapt_with_citation` only when explicitly needed
+- Initial method reviewed:
+  - `Otherfunctions/Homer_Convert/hmrIntensity2OD.m` (intensity to delta optical density transform)
+- Intake status: `in_review`
+
+## Batch: 2026-03-06 (Homer3 + Huppert 2009)
+
+### 7) `BUNPC-Homer3-1.87.0.0.zip`
+- Source: local ZIP in `references/`
+- Unpacked path: `references/unpacked/BUNPC-Homer3-1.87.0.0`
+- Intended usage mode: `reference_only` for pipeline and formulas, `adapt_with_citation` for small method-level snippets
+- Functions reviewed:
+  - `FuncRegistry/UserFunctions/hmrR_Intensity2OD.m`
+  - `FuncRegistry/UserFunctions/Archive/hmrR_Intensity2OD_Nirs.m`
+  - `FuncRegistry/UserFunctions/hmrR_OD2Conc.m`
+  - `Example pipelines/simple_pipeline.m`
+- Intake status: `in_review`
+
+### 8) `Huppert, 2009.pdf`
+- Source: local PDF in `references/`
+- Intended usage mode: `reference_only`
+- Notes: used as conceptual MBLL/OD background reference; direct PDF text extraction not configured in current sandbox.
+- Intake status: `in_review`

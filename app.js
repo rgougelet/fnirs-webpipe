@@ -46,6 +46,12 @@ let highToggleBtn = null;
 let filterEngineSelect = null;
 let dcRestoreCheckbox = null;
 let plotModeSelect = null;
+let signalDomainSelect = null;
+let filterStepCheckbox = null;
+let trimStepCheckbox = null;
+let pipelineSummaryEl = null;
+let filterStepEnabled = true;
+let trimStepEnabled = true;
 
 let notesInput = null;
 let branchTagInput = null;
@@ -438,6 +444,75 @@ function buildControls() {
   const processRow = document.createElement("div");
   processRow.className = "grid grid-cols-2 gap-2";
 
+  const pipelineDiv = document.createElement("div");
+  pipelineDiv.className = "rounded border border-slate-200 p-3 flex flex-col gap-2";
+  pipelineDiv.innerHTML = "<div class='font-semibold'>Pipeline</div>";
+
+  const domainRow = document.createElement("div");
+  domainRow.className = "grid grid-cols-[auto_1fr] gap-2 items-center";
+  const domainLbl = document.createElement("div");
+  domainLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
+  domainLbl.textContent = "Signal:";
+  signalDomainSelect = document.createElement("select");
+  signalDomainSelect.className = "p-2 border rounded bg-white w-full text-sm";
+  [{ value: "intensity", label: "Intensity (a.u.)" }, { value: "delta_od", label: "Delta OD" }].forEach(opt => {
+    const o = document.createElement("option");
+    o.value = opt.value;
+    o.textContent = opt.label;
+    signalDomainSelect.appendChild(o);
+  });
+  signalDomainSelect.value = "intensity";
+  signalDomainSelect.onchange = () => {
+    updatePipelineSummary();
+    redraw();
+    renderMeta();
+  };
+  domainRow.appendChild(domainLbl);
+  domainRow.appendChild(signalDomainSelect);
+
+  const flagsRow = document.createElement("div");
+  flagsRow.className = "grid grid-cols-2 gap-2";
+
+  const filterMasterRow = document.createElement("label");
+  filterMasterRow.className = "inline-flex items-center gap-2 text-sm";
+  filterStepCheckbox = document.createElement("input");
+  filterStepCheckbox.type = "checkbox";
+  filterStepCheckbox.className = "h-4 w-4";
+  filterStepCheckbox.checked = true;
+  filterStepCheckbox.onchange = () => {
+    filterStepEnabled = !!filterStepCheckbox.checked;
+    updatePipelineSummary();
+    redraw();
+    renderMeta();
+  };
+  filterMasterRow.appendChild(filterStepCheckbox);
+  filterMasterRow.appendChild(document.createTextNode("Enable filter"));
+
+  const trimMasterRow = document.createElement("label");
+  trimMasterRow.className = "inline-flex items-center gap-2 text-sm";
+  trimStepCheckbox = document.createElement("input");
+  trimStepCheckbox.type = "checkbox";
+  trimStepCheckbox.className = "h-4 w-4";
+  trimStepCheckbox.checked = true;
+  trimStepCheckbox.onchange = () => {
+    trimStepEnabled = !!trimStepCheckbox.checked;
+    updatePipelineSummary();
+    redraw();
+    renderMeta();
+  };
+  trimMasterRow.appendChild(trimStepCheckbox);
+  trimMasterRow.appendChild(document.createTextNode("Enable trim"));
+
+  flagsRow.appendChild(filterMasterRow);
+  flagsRow.appendChild(trimMasterRow);
+
+  pipelineSummaryEl = document.createElement("div");
+  pipelineSummaryEl.className = "text-xs text-slate-600 leading-tight";
+
+  pipelineDiv.appendChild(domainRow);
+  pipelineDiv.appendChild(flagsRow);
+  pipelineDiv.appendChild(pipelineSummaryEl);
+
   const exDiv = document.createElement("div");
   exDiv.className = "rounded border border-slate-200 p-3 flex flex-col space-y-1";
   exDiv.innerHTML = "<div class='font-semibold'>Cut intervals (s)</div>";
@@ -600,9 +675,11 @@ function buildControls() {
   processRow.appendChild(fDiv);
   grid.appendChild(notesDiv);
   grid.appendChild(selectRow);
+  grid.appendChild(pipelineDiv);
   grid.appendChild(processRow);
   rebuildRadioSelections();
   updateFilterToggleButtons();
+  updatePipelineSummary();
 
   if (protocolHost) {
   protocolHost.innerHTML = "";
@@ -644,6 +721,31 @@ function updateFilterToggleButtons() {
   }
 }
 
+function getSignalDomain() {
+  if (!signalDomainSelect) return "intensity";
+  return signalDomainSelect.value === "delta_od" ? "delta_od" : "intensity";
+}
+
+function updatePipelineSummary() {
+  if (!pipelineSummaryEl) return;
+  const domainLabel = getSignalDomain() === "delta_od" ? "Delta OD" : "Intensity";
+  const filterLabel = filterStepEnabled ? "Filter on" : "Filter off";
+  const trimLabel = trimStepEnabled ? "Trim on" : "Trim off";
+  pipelineSummaryEl.textContent = "Raw -> " + domainLabel + " -> " + filterLabel + " -> " + trimLabel + " -> Plot";
+}
+
+function intensityToDeltaOd(series) {
+  if (!Array.isArray(series) || !series.length) return [];
+  // Adapted from Homer/NIRS-KIT intensity->OD methods: dOD = -log(|d|/mean(|d|)).
+  const safe = series.map(v => Math.abs(Number(v)));
+  const meanAbs = safe.reduce((sum, v) => sum + v, 0) / safe.length;
+  if (!Number.isFinite(meanAbs) || meanAbs <= 0) return series.slice();
+  return safe.map(v => {
+    const denom = v <= 0 ? Number.EPSILON : v;
+    return -Math.log(denom / meanAbs);
+  });
+}
+
 function resetProtocolUiOnly() {
   if (!data.wl1) return;
 
@@ -662,10 +764,16 @@ function resetProtocolUiOnly() {
   if (highCutInput) highCutInput.value = "10.0";
   if (filterEngineSelect) filterEngineSelect.value = "sos";
   if (dcRestoreCheckbox) dcRestoreCheckbox.checked = true;
+  if (signalDomainSelect) signalDomainSelect.value = "intensity";
+  filterStepEnabled = true;
+  trimStepEnabled = true;
+  if (filterStepCheckbox) filterStepCheckbox.checked = filterStepEnabled;
+  if (trimStepCheckbox) trimStepCheckbox.checked = trimStepEnabled;
   if (plotModeSelect) plotModeSelect.value = currentPlotMode;
 
   lastProtocolFilename = "";
   updateProtocolFilenameLabel();
+  updatePipelineSummary();
 
   rebuildRadioSelections();
   renderMeta();
@@ -677,21 +785,23 @@ function resetProtocolUiOnly() {
 function redraw() {
   if (!data.wl1) return;
 
-  const raw = data[currentWavelength].map(r => r[currentChannel]);
+  const rawIntensity = data[currentWavelength].map(r => r[currentChannel]);
+  const signalDomain = getSignalDomain();
+  const raw = signalDomain === "delta_od" ? intensityToDeltaOd(rawIntensity) : rawIntensity.slice();
   let filtered = raw.slice();
   let filterLabel = "no filter";
 
   const low = parseFloat(lowCutInput.value);
   const high = parseFloat(highCutInput.value);
-  const requestedLowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
-  const requestedHighHz = highCutEnabled && Number.isFinite(high) ? high : null;
+  const requestedLowHz = (filterStepEnabled && lowCutEnabled && Number.isFinite(low)) ? low : null;
+  const requestedHighHz = (filterStepEnabled && highCutEnabled && Number.isFinite(high)) ? high : null;
   const validated = validateFilterCutoffs(samplingRate, requestedLowHz, requestedHighHz);
   const lowHz = validated.lowHz;
   const highHz = validated.highHz;
   const filterEngine = getFilterEngine();
   const dcRestore = isDcRestoreEnabled();
 
-  if (lowHz !== null || highHz !== null) {
+  if (filterStepEnabled && (lowHz !== null || highHz !== null)) {
     filtered = butterworth4(raw, samplingRate, lowHz, highHz, filterEngine);
     filtered = rmsNormalize(raw, filtered, Math.ceil(samplingRate || 0));
     if (dcRestore) filtered = restoreDcMean(raw, filtered);
@@ -700,16 +810,21 @@ function redraw() {
     else if (lowHz) filterLabel = "HP " + lowHz + " Hz";
     else if (highHz) filterLabel = "LP " + highHz + " Hz";
     else filterLabel = "filter enabled";
+  } else if (!filterStepEnabled) {
+    filterLabel = "disabled";
   }
 
   const intervals = parseIntervals(exclusionTable.value);
-  const processed = applyExclusions(filtered, intervals);
-  const trimmedEvents = adjustEvents(events, intervals);
+  const processed = trimStepEnabled ? applyExclusions(filtered, intervals) : filtered.slice();
+  const trimmedEvents = trimStepEnabled
+    ? adjustEvents(events, intervals)
+    : events.map(e => ({ time: e.sample / samplingRate, code: e.code }));
 
   const wlLabel = currentWavelength === "wl1" ? "760 nm" : "850 nm";
   const chLabel = channelLabels[currentChannel];
-  if (rawPlotHeaderEl) rawPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Raw | " + formatStats(computeStats(raw));
-  if (trimPlotHeaderEl) trimPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Trimmed (" + filterLabel + ") | " + formatStats(computeStats(processed));
+  const domainLabel = signalDomain === "delta_od" ? "Delta OD" : "Intensity";
+  if (rawPlotHeaderEl) rawPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Input (" + domainLabel + ") | " + formatStats(computeStats(raw));
+  if (trimPlotHeaderEl) trimPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Output (" + filterLabel + (trimStepEnabled ? ", trim on" : ", trim off") + ") | " + formatStats(computeStats(processed));
 
   drawPlot(
     ctxRaw,
@@ -718,7 +833,7 @@ function redraw() {
     samplingRate,
     intervals,
     events.map(e => ({ time: e.sample / samplingRate, code: e.code })),
-    wlLabel + " " + chLabel + " Raw",
+    wlLabel + " " + chLabel + " Input (" + domainLabel + ")",
     formatStats(computeStats(raw))
   );
 
@@ -729,7 +844,7 @@ function redraw() {
     samplingRate,
     null,
     trimmedEvents,
-    wlLabel + " " + chLabel + " Trimmed (" + filterLabel + ")",
+    wlLabel + " " + chLabel + " Output (" + filterLabel + ")",
     formatStats(computeStats(processed))
   );
 }
@@ -750,13 +865,13 @@ function renderMeta() {
 
   const low = parseFloat(lowCutInput.value);
   const high = parseFloat(highCutInput.value);
-  const requestedLowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
-  const requestedHighHz = highCutEnabled && Number.isFinite(high) ? high : null;
+  const requestedLowHz = (filterStepEnabled && lowCutEnabled && Number.isFinite(low)) ? low : null;
+  const requestedHighHz = (filterStepEnabled && highCutEnabled && Number.isFinite(high)) ? high : null;
   const validated = validateFilterCutoffs(samplingRate, requestedLowHz, requestedHighHz);
   const lowHz = validated.lowHz;
   const highHz = validated.highHz;
 
-  let filterText = "off";
+  let filterText = filterStepEnabled ? "off" : "disabled";
   if (lowHz !== null && highHz !== null) filterText = "BP " + lowHz + "-" + highHz + " Hz";
   else if (lowHz !== null) filterText = "HP " + lowHz + " Hz";
   else if (highHz !== null) filterText = "LP " + highHz + " Hz";
@@ -788,9 +903,12 @@ function renderMeta() {
     + "      <div class='text-slate-600'>Samples</div><div>" + data.wl1.length + "</div>"
     + "      <div class='text-slate-600'>Duration</div><div>" + (data.wl1.length / samplingRate).toFixed(2) + " s</div>"
     + "      <div class='text-slate-600'>Channels</div><div>" + data.wl1[0].length + "</div>"
+    + "      <div class='text-slate-600'>Signal domain</div><div>" + (getSignalDomain() === "delta_od" ? "Delta OD" : "Intensity (a.u.)") + "</div>"
     + "      <div class='text-slate-600'>Filter</div><div>" + escapeHtml(filterText) + "</div>"
+    + "      <div class='text-slate-600'>Filter step</div><div>" + (filterStepEnabled ? "on" : "off") + "</div>"
     + "      <div class='text-slate-600'>Filter engine</div><div>" + escapeHtml(filterEngine) + "</div>"
     + "      <div class='text-slate-600'>DC restore</div><div>" + (dcRestore ? "on" : "off") + "</div>"
+    + "      <div class='text-slate-600'>Trim step</div><div>" + (trimStepEnabled ? "on" : "off") + "</div>"
     + "      <div class='text-slate-600'>Filter note</div><div>" + (filterWarning || "none") + "</div>"
     + "      <div class='text-slate-600'>Protocol label</div><div>" + escapeHtml(labelText) + "</div>"
     + "      <div class='text-slate-600'>App version</div><div>" + APP_VERSION + "</div>"
@@ -840,8 +958,8 @@ function buildProtocolObject() {
   const low = parseFloat(lowCutInput.value);
   const high = parseFloat(highCutInput.value);
 
-  const requestedLowHz = lowCutEnabled && Number.isFinite(low) ? low : null;
-  const requestedHighHz = highCutEnabled && Number.isFinite(high) ? high : null;
+  const requestedLowHz = (filterStepEnabled && lowCutEnabled && Number.isFinite(low)) ? low : null;
+  const requestedHighHz = (filterStepEnabled && highCutEnabled && Number.isFinite(high)) ? high : null;
   const validated = validateFilterCutoffs(samplingRate, requestedLowHz, requestedHighHz);
   const lowHz = validated.lowHz;
   const highHz = validated.highHz;
@@ -851,8 +969,14 @@ function buildProtocolObject() {
   const steps = [];
 
   steps.push({
+    step: "transform_intensity_to_od",
+    enabled: getSignalDomain() === "delta_od",
+    output: "delta_od"
+  });
+
+  steps.push({
     step: "filter_butterworth_iir",
-    enabled: (lowHz !== null || highHz !== null),
+    enabled: filterStepEnabled && (lowHz !== null || highHz !== null),
     order: 4,
     lowHz: lowHz,
     highHz: highHz,
@@ -864,7 +988,7 @@ function buildProtocolObject() {
 
   steps.push({
     step: "trim",
-    enabled: true,
+    enabled: trimStepEnabled,
     intervalsSeconds: intervals
   });
 
@@ -909,15 +1033,21 @@ function buildProtocolSummary(protocol) {
 
   const label = protocol.protocolLabel ? protocol.protocolLabel : "";
   const labelPart = label ? ("label=" + label + " | ") : "";
+  const t = (protocol.steps || []).find(s => s.step === "transform_intensity_to_od");
+  const domainPart = (t && t.enabled) ? "domain=delta_od" : "domain=intensity";
 
   let trimPart = "trim=none";
   const trimStep = (protocol.steps || []).find(s => s.step === "trim");
-  if (trimStep && trimStep.enabled && Array.isArray(trimStep.intervalsSeconds) && trimStep.intervalsSeconds.length) {
-    const n = trimStep.intervalsSeconds.length;
-    const ints = trimStep.intervalsSeconds
-      .map(x => Number(x.start).toFixed(2) + "-" + Number(x.end).toFixed(2))
-      .join(",");
-    trimPart = "trim=" + n + " [" + ints + "]";
+  if (trimStep) {
+    if (!trimStep.enabled) {
+      trimPart = "trim=off";
+    } else if (Array.isArray(trimStep.intervalsSeconds) && trimStep.intervalsSeconds.length) {
+      const n = trimStep.intervalsSeconds.length;
+      const ints = trimStep.intervalsSeconds
+        .map(x => Number(x.start).toFixed(2) + "-" + Number(x.end).toFixed(2))
+        .join(",");
+      trimPart = "trim=" + n + " [" + ints + "]";
+    }
   }
 
   let filterPart = "filter=off";
@@ -934,7 +1064,7 @@ function buildProtocolSummary(protocol) {
     filterPart += " amp=rms";
   }
 
-  return labelPart + "wl=" + wlTxt + " | ch=" + chLbl + " | " + filterPart + " | " + trimPart;
+  return labelPart + "wl=" + wlTxt + " | ch=" + chLbl + " | " + domainPart + " | " + filterPart + " | " + trimPart;
 }
 
 function exportProtocol() {
@@ -1003,21 +1133,29 @@ function applyProtocol(protocol) {
   if (currentChannel < 0) currentChannel = 0;
 
   const trimStep = (p.steps || []).find(s => s.step === "trim");
-  if (trimStep && trimStep.enabled && Array.isArray(trimStep.intervalsSeconds)) {
+  trimStepEnabled = !trimStep || !!trimStep.enabled;
+  if (trimStep && Array.isArray(trimStep.intervalsSeconds)) {
     exclusionTable.value = trimStep.intervalsSeconds
       .map(x => Number(x.start) + "," + Number(x.end))
       .join("\n");
   } else {
     exclusionTable.value = "";
   }
+  if (trimStepCheckbox) trimStepCheckbox.checked = trimStepEnabled;
+
+  const transformStep = (p.steps || []).find(s => s.step === "transform_intensity_to_od");
+  if (signalDomainSelect) {
+    signalDomainSelect.value = (transformStep && transformStep.enabled) ? "delta_od" : "intensity";
+  }
 
   const f = (p.steps || []).find(s => s.step === "filter_butterworth_iir");
   const requestedPlotView = (f && (f.plotView === "raw" || f.plotView === "trimmed" || f.plotView === "both"))
     ? f.plotView
     : currentPlotMode;
-  if (f && f.enabled) {
-    lowCutEnabled = (f.lowHz !== null && typeof f.lowHz !== "undefined");
-    highCutEnabled = (f.highHz !== null && typeof f.highHz !== "undefined");
+  if (f) {
+    filterStepEnabled = !!f.enabled;
+    lowCutEnabled = filterStepEnabled && (f.lowHz !== null && typeof f.lowHz !== "undefined");
+    highCutEnabled = filterStepEnabled && (f.highHz !== null && typeof f.highHz !== "undefined");
     lowCutInput.value = (f.lowHz === null || typeof f.lowHz === "undefined") ? "0.1" : String(f.lowHz);
     highCutInput.value = (f.highHz === null || typeof f.highHz === "undefined") ? "10.0" : String(f.highHz);
     if (filterEngineSelect) {
@@ -1025,6 +1163,7 @@ function applyProtocol(protocol) {
     }
     if (dcRestoreCheckbox) dcRestoreCheckbox.checked = !!f.dcRestore;
   } else {
+    filterStepEnabled = true;
     lowCutEnabled = true;
     highCutEnabled = true;
     lowCutInput.value = "0.1";
@@ -1032,9 +1171,11 @@ function applyProtocol(protocol) {
     if (filterEngineSelect) filterEngineSelect.value = "sos";
     if (dcRestoreCheckbox) dcRestoreCheckbox.checked = true;
   }
+  if (filterStepCheckbox) filterStepCheckbox.checked = filterStepEnabled;
   if (plotModeSelect) plotModeSelect.value = requestedPlotView;
   setPlotMode(requestedPlotView);
   updateFilterToggleButtons();
+  updatePipelineSummary();
 
   rebuildRadioSelections();
   renderMeta();
@@ -1131,10 +1272,19 @@ function normalizeProtocol(raw) {
 
   if (!out.steps.length) {
     out.steps = [
+      { step: "transform_intensity_to_od", enabled: false, output: "delta_od" },
       { step: "filter_butterworth_iir", enabled: false, order: 4, lowHz: null, highHz: null, implementation: "sos", dcRestore: true, plotView: "both", amplitudePreservation: "rms_normalize_to_pre_filter" },
       { step: "trim", enabled: true, intervalsSeconds: [] }
     ];
   }
+
+  let transform = out.steps.find(s => s.step === "transform_intensity_to_od");
+  if (!transform) {
+    transform = { step: "transform_intensity_to_od", enabled: false, output: "delta_od" };
+    out.steps.unshift(transform);
+  }
+  transform.enabled = !!transform.enabled;
+  transform.output = "delta_od";
 
   const trim = out.steps.find(s => s.step === "trim");
   if (trim) {

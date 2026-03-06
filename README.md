@@ -6,6 +6,12 @@ All computation occurs locally in the user's browser. Data are never uploaded to
 
 Desktop-only scope: this project does not target mobile layouts or mobile capture.
 
+Current pipeline controls expose these ordered steps:
+- Input signal domain: `Intensity (a.u.)` or `Delta OD`
+- Butterworth filtering (legacy/SOS implementations)
+- Interval trimming
+- Plot view selection (raw, trimmed, or both)
+
 ## Usage
 Open the web app and load a NIRx data folder as a zip file.
 
