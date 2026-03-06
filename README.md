@@ -4,6 +4,8 @@ fnirs-webpipe is a browser based, client side pipeline for exploratory and repro
 
 All computation occurs locally in the user's browser. Data are never uploaded to a server.
 
+Desktop-only scope: this project does not target mobile layouts or mobile capture.
+
 ## Usage
 Open the web app and load a NIRx data folder as a zip file.
 
@@ -29,8 +31,6 @@ By default, capture will try to auto-load the newest ZIP from `../NIRx` (fallbac
 
 Optional overrides:
 - `node scripts/capture-ui.mjs --zip=../NIRx/2026-02-18_002.zip`
-- Include mobile capture explicitly:
-- `node scripts/capture-ui.mjs --include-mobile=true`
 - `node scripts/capture-ui.mjs --nirx-dir=../NIRx`
 
 Screenshots are written to `screenshots/`.

@@ -74,7 +74,7 @@ let themeToggleBtn = null;
 let currentTheme = "dark";
 const THEME_STORAGE_KEY = "fnirs-webpipe-theme";
 const PLOT_MODE_STORAGE_KEY = "fnirs-webpipe-plot-mode";
-let currentPlotMode = "trimmed";
+let currentPlotMode = "both";
 let rawPanelEl = null;
 let trimPanelEl = null;
 
@@ -154,7 +154,7 @@ function initPlotMode() {
 }
 
 function setPlotMode(mode) {
-  currentPlotMode = (mode === "raw" || mode === "trimmed" || mode === "both") ? mode : "trimmed";
+  currentPlotMode = (mode === "raw" || mode === "trimmed" || mode === "both") ? mode : "both";
   try {
     localStorage.setItem(PLOT_MODE_STORAGE_KEY, currentPlotMode);
   } catch (e) {}
@@ -606,7 +606,7 @@ function buildControls() {
 
   if (protocolHost) {
   protocolHost.innerHTML = "";
-  protocolHost.className = "min-w-[280px] w-full lg:col-span-3 grid grid-cols-4 gap-2";
+  protocolHost.className = "min-w-[280px] w-full col-span-3 grid grid-cols-4 gap-2";
   protocolHost.appendChild(protoBar);
   protocolHost.appendChild(labelCard);
   protocolHost.appendChild(summaryCard);
@@ -1131,7 +1131,7 @@ function normalizeProtocol(raw) {
 
   if (!out.steps.length) {
     out.steps = [
-      { step: "filter_butterworth_iir", enabled: false, order: 4, lowHz: null, highHz: null, implementation: "sos", dcRestore: true, plotView: "trimmed", amplitudePreservation: "rms_normalize_to_pre_filter" },
+      { step: "filter_butterworth_iir", enabled: false, order: 4, lowHz: null, highHz: null, implementation: "sos", dcRestore: true, plotView: "both", amplitudePreservation: "rms_normalize_to_pre_filter" },
       { step: "trim", enabled: true, intervalsSeconds: [] }
     ];
   }
@@ -1153,7 +1153,7 @@ function normalizeProtocol(raw) {
     f.highHz = (f.highHz === null || typeof f.highHz === "undefined") ? null : (Number.isFinite(Number(f.highHz)) ? Number(f.highHz) : null);
     f.implementation = f.implementation === "legacy" ? "legacy" : "sos";
     f.dcRestore = (typeof f.dcRestore === "boolean") ? f.dcRestore : true;
-    f.plotView = (f.plotView === "raw" || f.plotView === "trimmed" || f.plotView === "both") ? f.plotView : "trimmed";
+    f.plotView = (f.plotView === "raw" || f.plotView === "trimmed" || f.plotView === "both") ? f.plotView : "both";
     if (typeof f.amplitudePreservation !== "string") f.amplitudePreservation = "rms_normalize_to_pre_filter";
   }
 

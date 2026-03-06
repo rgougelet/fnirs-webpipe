@@ -12,19 +12,11 @@
 </head>
 
 <body class="bg-slate-100 text-slate-800">
-
-  <div id="rotateNotice" class="hidden fixed inset-0 z-50 p-6 items-center justify-center bg-slate-950 text-slate-100 text-center">
-    <div>
-      <div class="text-xl font-semibold mb-2">Rotate Device</div>
-      <div class="text-sm text-slate-300">This app is optimized for landscape orientation.</div>
-    </div>
-  </div>
-
-  <div id="appShell" class="max-w-7xl mx-auto p-4 lg:p-3 space-y-3 h-screen">
+  <div id="appShell" class="max-w-7xl mx-auto p-3 space-y-3 h-screen">
 
     <h1 class="text-2xl font-semibold">fNIRS Web Pipeline v0.2</h1>
 
-    <div id="topRow" class="bg-white rounded border border-slate-200 p-2 grid grid-cols-1 lg:grid-cols-5 gap-2 items-start">
+    <div id="topRow" class="bg-white rounded border border-slate-200 p-2 grid grid-cols-5 gap-2 items-start">
       <div class="min-w-[220px] rounded border border-slate-200 bg-slate-50 p-2">
         <div class="text-[11px] uppercase tracking-wide text-slate-600 font-semibold mb-1">App</div>
         <div class="text-xl font-semibold text-slate-100 leading-tight">fNIRS Web Pipeline v0.2</div>
@@ -39,7 +31,7 @@
         >
       </div>
 
-      <div id="protocolHost" class="hidden w-full lg:col-span-3"></div>
+      <div id="protocolHost" class="hidden w-full col-span-3"></div>
     </div>
 
     <div id="leftPanel" class="space-y-3">
@@ -47,7 +39,7 @@
       <div id="controls" class="hidden bg-white rounded p-3"></div>
     </div>
 
-    <div id="plotGrid" class="bg-white rounded p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div id="plotGrid" class="bg-white rounded p-4 grid grid-cols-2 gap-4">
       <canvas id="plot" width="900" height="450" class="w-full"></canvas>
     </div>
 

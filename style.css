@@ -164,88 +164,86 @@ canvas {
   vertical-align: top;
 }
 
-@media (min-width: 1024px) {
-  body {
-    overflow: hidden;
-  }
+body {
+  overflow: hidden;
+}
 
-  #appShell {
-    display: grid;
-    grid-template-columns: 430px minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-areas:
-      "top top"
-      "left plot";
-    gap: 8px;
-    overflow: hidden;
-    max-width: none;
-    width: 100vw;
-    height: 100vh;
-    padding: 10px 14px;
-    margin: 0;
-  }
+#appShell {
+  display: grid;
+  grid-template-columns: 430px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "left plot";
+  gap: 8px;
+  overflow: hidden;
+  max-width: none;
+  width: 100vw;
+  height: 100vh;
+  padding: 10px 14px;
+  margin: 0;
+}
 
-  #appShell > h1 { display: none; }
+#appShell > h1 { display: none; }
 
-  #topRow {
-    grid-area: top;
-    min-height: 0;
-    padding: 6px;
-    align-items: stretch;
-  }
+#topRow {
+  grid-area: top;
+  min-height: 0;
+  padding: 6px;
+  align-items: stretch;
+}
 
-  #protocolHost {
-    grid-template-columns: minmax(320px, 2.1fr) minmax(170px, 1.0fr) minmax(220px, 1.4fr) minmax(170px, 1.0fr);
-    align-items: stretch;
-  }
+#protocolHost {
+  grid-template-columns: minmax(320px, 2.1fr) minmax(170px, 1.0fr) minmax(220px, 1.4fr) minmax(170px, 1.0fr);
+  align-items: stretch;
+}
 
-  #leftPanel {
-    grid-area: left;
-    min-height: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
+#leftPanel {
+  grid-area: left;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
-  #controls {
-    min-height: 0;
-    flex: 1 1 auto;
-    overflow: hidden;
-    padding: 8px;
-  }
+#controls {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 8px;
+}
 
-  #meta {
-    flex: 0 0 auto;
-    max-height: 22%;
-    overflow: hidden;
-    padding: 8px;
-  }
+#meta {
+  flex: 0 0 auto;
+  max-height: 22%;
+  overflow: hidden;
+  padding: 8px;
+}
 
-  #plotGrid {
-    grid-area: plot;
-    min-height: 0;
-    height: 100%;
-    overflow: hidden;
-    align-self: stretch;
-    padding: 8px 8px 10px 8px;
-    border: 1px solid #cbd5e1;
-    background: #f8fafc !important;
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr 1fr;
-    gap: 6px;
-    border-right: 8px solid #cbd5e1;
-  }
+#plotGrid {
+  grid-area: plot;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  align-self: stretch;
+  padding: 8px 8px 10px 8px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc !important;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
+  border-right: 8px solid #cbd5e1;
+}
 
-  #plotGrid canvas {
-    background: #ffffff !important;
-    border: 1px solid #cbd5e1;
-    border-right: 4px solid #94a3b8;
-    width: 100%;
-    height: auto;
-    max-height: calc((100vh - 255px) / 2);
-    object-fit: contain;
-  }
+#plotGrid canvas {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1;
+  border-right: 4px solid #94a3b8;
+  width: 100%;
+  height: auto;
+  max-height: calc((100vh - 255px) / 2);
+  object-fit: contain;
 }
 
 #meta::before,
