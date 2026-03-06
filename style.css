@@ -201,7 +201,8 @@ body {
 #leftPanel {
   grid-area: left;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -210,14 +211,14 @@ body {
 #controls {
   min-height: 0;
   flex: 1 1 auto;
-  overflow: hidden;
+  overflow: visible;
   padding: 8px;
 }
 
 #meta {
   flex: 0 0 auto;
-  max-height: 22%;
-  overflow: hidden;
+  max-height: none;
+  overflow: visible;
   padding: 8px;
 }
 
