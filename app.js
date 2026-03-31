@@ -43,10 +43,14 @@ let lowCutEnabled = true;
 let highCutEnabled = true;
 let lowCutInput = null;
 let highCutInput = null;
+let lowCutSixDbInput = null;
+let highCutSixDbInput = null;
 let lowToggleBtn = null;
 let highToggleBtn = null;
 let filterEngineSelect = null;
 let dcRestoreCheckbox = null;
+let edgePaddingCheckbox = null;
+let edgePaddingSecondsInput = null;
 let plotModeSelect = null;
 let signalDomainSelect = null;
 let filterStepCheckbox = null;
@@ -54,6 +58,7 @@ let trimStepCheckbox = null;
 let pipelineSummaryEl = null;
 let filterStepEnabled = true;
 let trimStepEnabled = true;
+let amplitudePreservationMode = "none";
 
 let notesInput = null;
 let branchTagInput = null;
@@ -73,6 +78,9 @@ let sources = {
 };
 
 let pendingProtocol = null;
+let recordingSummaryContentEl = null;
+let fileSourcesContentEl = null;
+let eventsContentEl = null;
 
 /* Protocol UI state */
 let protocolFilenameLabelEl = null;
@@ -82,6 +90,8 @@ let themeToggleBtn = null;
 let currentTheme = "dark";
 const THEME_STORAGE_KEY = "fnirs-webpipe-theme";
 const PLOT_MODE_STORAGE_KEY = "fnirs-webpipe-plot-mode";
+const DEFAULT_PASSBAND_RIPPLE_DB = 0.1;
+const DEFAULT_STOPBAND_ATTENUATION_DB = 6.0;
 let currentPlotMode = "both";
 let rawPanelEl = null;
 let trimPanelEl = null;
@@ -90,6 +100,7 @@ initTheme();
 initPlotMode();
 input.addEventListener("change", handleInput);
 initPlotLayout();
+buildControls();
 renderAppLastUpdated();
 
 initUrlProtocolListener();
@@ -119,14 +130,11 @@ async function handleInput(evt) {
 
 function resetUiOnly() {
   metaDiv.innerHTML = "";
-  if (protocolHost) {
-  protocolHost.classList.add("hidden");
-  protocolHost.innerHTML = "";
-  }
-  controls.classList.add("hidden");
-  controls.innerHTML = "";
   protocolSummaryEl = null;
   protocolFilenameLabelEl = null;
+  recordingSummaryContentEl = null;
+  fileSourcesContentEl = null;
+  eventsContentEl = null;
   ctxRaw.clearRect(0, 0, canvasRaw.width, canvasRaw.height);
   ctxTrim.clearRect(0, 0, canvasTrim.width, canvasTrim.height);
 }
@@ -309,18 +317,14 @@ function loadFiles(files) {
 function buildControls() {
   controls.innerHTML = "";
   controls.classList.remove("hidden");
-  controls.className = "bg-white rounded p-4 flex flex-col gap-3 border border-slate-200";
-
-  /* Top protocol workspace cards */
-  const protoBar = document.createElement("div");
-  protoBar.className = "top-card rounded border border-slate-200 bg-slate-50 p-2 flex items-center gap-2";
-
-  const protoTitle = document.createElement("div");
-  protoTitle.className = "text-[11px] uppercase tracking-wide font-semibold text-slate-600 mr-1";
-  protoTitle.textContent = "Actions";
+  controls.className = "bg-white rounded p-3 flex flex-col gap-2 border border-slate-200";
+  if (protocolHost) {
+    protocolHost.classList.add("hidden");
+    protocolHost.innerHTML = "";
+  }
 
   const btnGroup = document.createElement("div");
-  btnGroup.className = "flex items-center gap-1.5 flex-nowrap";
+  btnGroup.className = "flex items-center gap-1.5 flex-wrap";
 
   const exportBtn = document.createElement("button");
   exportBtn.className = "btn";
@@ -348,51 +352,52 @@ function buildControls() {
   applyTheme(currentTheme);
 
   protocolFilenameLabelEl = document.createElement("div");
-  protocolFilenameLabelEl.className = "text-xs text-slate-600 ml-auto truncate";
+  protocolFilenameLabelEl.className = "text-xs text-slate-600 break-all";
   updateProtocolFilenameLabel();
-
-  protoBar.appendChild(protoTitle);
   btnGroup.appendChild(exportBtn);
   btnGroup.appendChild(importBtn);
   btnGroup.appendChild(resetBtn);
   btnGroup.appendChild(copyLinkBtn);
   btnGroup.appendChild(themeToggleBtn);
-  protoBar.appendChild(btnGroup);
-  protoBar.appendChild(protocolFilenameLabelEl);
+  const actionsDiv = document.createElement("div");
+  actionsDiv.className = "pt-2 flex flex-col gap-2";
+  actionsDiv.appendChild(btnGroup);
+  actionsDiv.appendChild(protocolFilenameLabelEl);
 
-  const labelCard = document.createElement("div");
-  labelCard.className = "top-card rounded border border-slate-200 bg-slate-50 p-2";
+  const protocolDiv = document.createElement("div");
+  protocolDiv.className = "pt-2 flex flex-col gap-2";
   const labelTitle = document.createElement("div");
-  labelTitle.className = "text-[11px] uppercase tracking-wide font-semibold text-slate-600 mb-1";
-  labelTitle.textContent = "Protocol Label";
+  labelTitle.className = "text-xs text-slate-600 font-semibold";
+  labelTitle.textContent = "Label";
   branchTagInput = document.createElement("input");
   branchTagInput.type = "text";
   branchTagInput.placeholder = "e.g., fs32, qc1, motionTrim";
   branchTagInput.oninput = renderMeta;
   branchTagInput.className = "p-2 border rounded bg-white w-full";
-  labelCard.appendChild(labelTitle);
-  labelCard.appendChild(branchTagInput);
-
-  const summaryCard = document.createElement("div");
-  summaryCard.className = "top-card rounded border border-slate-200 bg-slate-50 p-2";
   const summaryTitle = document.createElement("div");
-  summaryTitle.className = "text-[11px] uppercase tracking-wide font-semibold text-slate-600 mb-1";
-  summaryTitle.textContent = "Protocol Summary";
+  summaryTitle.className = "text-xs text-slate-600 font-semibold";
+  summaryTitle.textContent = "Summary";
   protocolSummaryEl = document.createElement("div");
-  protocolSummaryEl.className = "text-[13px] leading-tight whitespace-pre-wrap max-h-12 overflow-y-auto text-slate-700";
+  protocolSummaryEl.className = "text-[13px] leading-tight whitespace-pre-wrap max-h-20 overflow-y-auto text-slate-700";
   protocolSummaryEl.textContent = "No protocol summary yet.";
-  summaryCard.appendChild(summaryTitle);
-  summaryCard.appendChild(protocolSummaryEl);
+  protocolDiv.appendChild(labelTitle);
+  protocolDiv.appendChild(branchTagInput);
+  protocolDiv.appendChild(summaryTitle);
+  protocolDiv.appendChild(protocolSummaryEl);
 
-  const grid = document.createElement("div");
-  grid.className = "grid grid-cols-1 gap-2 items-start";
-
-  const selectRow = document.createElement("div");
-  selectRow.className = "grid grid-cols-1 gap-2";
+  const importDiv = document.createElement("div");
+  importDiv.className = "pt-2 flex flex-col gap-2";
+  const importHelp = document.createElement("div");
+  importHelp.className = "text-xs text-slate-600";
+  importHelp.textContent = "Load a NIRx ZIP or folder set.";
+  metaDiv.className = "text-sm text-slate-600";
+  input.className = "block w-full p-2 border rounded bg-white";
+  importDiv.appendChild(input);
+  importDiv.appendChild(importHelp);
+  importDiv.appendChild(metaDiv);
 
   const wlDiv = document.createElement("div");
-  wlDiv.className = "rounded border border-slate-200 p-3 flex flex-col gap-2";
-  wlDiv.innerHTML = "<div class='font-semibold'>Wavelength (nm)</div>";
+  wlDiv.className = "pt-2 flex flex-col gap-2";
   const wlRow = document.createElement("div");
   wlRow.className = "wl-choice-row";
 
@@ -413,8 +418,7 @@ function buildControls() {
   wlDiv.appendChild(wlRow);
 
   const chDiv = document.createElement("div");
-  chDiv.className = "rounded border border-slate-200 p-3 flex flex-col gap-2";
-  chDiv.innerHTML = "<div class='font-semibold'>Channel</div>";
+  chDiv.className = "pt-2 flex flex-col gap-2";
 
   const groups = groupChannelsBySource(channelLabels);
   groups.forEach(g => {
@@ -449,12 +453,8 @@ function buildControls() {
     chDiv.appendChild(row);
   });
 
-  const processRow = document.createElement("div");
-  processRow.className = "grid grid-cols-2 gap-2";
-
   const pipelineDiv = document.createElement("div");
-  pipelineDiv.className = "rounded border border-slate-200 p-3 flex flex-col gap-2";
-  pipelineDiv.innerHTML = "<div class='font-semibold'>Pipeline</div>";
+  pipelineDiv.className = "pt-2 flex flex-col gap-2";
 
   const domainRow = document.createElement("div");
   domainRow.className = "grid grid-cols-[auto_1fr] gap-2 items-center";
@@ -522,33 +522,45 @@ function buildControls() {
   pipelineDiv.appendChild(pipelineSummaryEl);
 
   const exDiv = document.createElement("div");
-  exDiv.className = "rounded border border-slate-200 p-3 flex flex-col space-y-1";
-  exDiv.innerHTML = "<div class='font-semibold'>Cut intervals (s)</div>";
+  exDiv.className = "pt-2 flex flex-col space-y-2";
 
   exclusionTable = document.createElement("textarea");
-  exclusionTable.rows = 2;
+  exclusionTable.rows = 6;
   exclusionTable.placeholder = "23, 25\n34, 36";
   exclusionTable.oninput = () => { redraw(); renderMeta(); };
   exclusionTable.className = "p-2 border rounded bg-white w-full";
+  exclusionTable.style.resize = "vertical";
   exDiv.appendChild(exclusionTable);
 
   const fDiv = document.createElement("div");
-  fDiv.className = "rounded border border-slate-200 p-3 flex flex-col space-y-1";
-  fDiv.innerHTML = "<div class='font-semibold'>Butterworth filter (4th)</div>";
+  fDiv.className = "pt-2 flex flex-col space-y-2";
 
   lowCutInput = document.createElement("input");
   lowCutInput.type = "text";
   lowCutInput.inputMode = "decimal";
-  lowCutInput.placeholder = "0.1";
+  lowCutInput.placeholder = "1.0";
+  lowCutInput.title = "Lower in-band edge in Hz. In [0.5 1 9 9.5] with shape [0 1 1 0], this is the second value where gain reaches the flat in-band region.";
   lowCutInput.oninput = () => { redraw(); renderMeta(); };
   lowCutInput.className = "p-2 border rounded bg-white w-full";
   lowCutInput.value = "0.1";
   const lowLbl = document.createElement("div");
   lowLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
-  lowLbl.textContent = "Low:";
+  lowLbl.textContent = "Low edge:";
+  lowCutSixDbInput = document.createElement("input");
+  lowCutSixDbInput.type = "text";
+  lowCutSixDbInput.inputMode = "decimal";
+  lowCutSixDbInput.placeholder = "0.05";
+  lowCutSixDbInput.title = "Lower stop edge in Hz. In [0.5 1 9 9.5] with shape [0 1 1 0], this is the first value on the rise into the in-band region.";
+  lowCutSixDbInput.oninput = () => { redraw(); renderMeta(); };
+  lowCutSixDbInput.className = "p-2 border rounded bg-white w-full";
+  lowCutSixDbInput.value = "0.05";
+  const lowSixDbLbl = document.createElement("div");
+  lowSixDbLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
+  lowSixDbLbl.textContent = "Stop low (-6 dB):";
   lowToggleBtn = document.createElement("button");
   lowToggleBtn.type = "button";
   lowToggleBtn.className = "filter-toggle-btn";
+  lowToggleBtn.title = "Toggle the high-pass stage.";
   lowToggleBtn.onclick = () => {
     lowCutEnabled = !lowCutEnabled;
     updateFilterToggleButtons();
@@ -556,7 +568,9 @@ function buildControls() {
     renderMeta();
   };
   const lowRow = document.createElement("div");
-  lowRow.className = "grid grid-cols-[auto_56px_auto] gap-2 items-center";
+  lowRow.className = "grid grid-cols-[auto_72px_auto_72px_auto] gap-2 items-center";
+  lowRow.appendChild(lowSixDbLbl);
+  lowRow.appendChild(lowCutSixDbInput);
   lowRow.appendChild(lowLbl);
   lowRow.appendChild(lowCutInput);
   lowRow.appendChild(lowToggleBtn);
@@ -564,16 +578,29 @@ function buildControls() {
   highCutInput = document.createElement("input");
   highCutInput.type = "text";
   highCutInput.inputMode = "decimal";
-  highCutInput.placeholder = "10.0";
+  highCutInput.placeholder = "9.0";
+  highCutInput.title = "Upper in-band edge in Hz. In [0.5 1 9 9.5] with shape [0 1 1 0], this is the third value where the flat in-band region ends.";
   highCutInput.oninput = () => { redraw(); renderMeta(); };
   highCutInput.className = "p-2 border rounded bg-white w-full";
   highCutInput.value = "10.0";
   const highLbl = document.createElement("div");
   highLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
-  highLbl.textContent = "High:";
+  highLbl.textContent = "High edge:";
+  highCutSixDbInput = document.createElement("input");
+  highCutSixDbInput.type = "text";
+  highCutSixDbInput.inputMode = "decimal";
+  highCutSixDbInput.placeholder = "12.5";
+  highCutSixDbInput.title = "Upper stop edge in Hz. In [0.5 1 9 9.5] with shape [0 1 1 0], this is the fourth value on the fall out of the in-band region.";
+  highCutSixDbInput.oninput = () => { redraw(); renderMeta(); };
+  highCutSixDbInput.className = "p-2 border rounded bg-white w-full";
+  highCutSixDbInput.value = "12.5";
+  const highSixDbLbl = document.createElement("div");
+  highSixDbLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
+  highSixDbLbl.textContent = "Stop high (-6 dB):";
   highToggleBtn = document.createElement("button");
   highToggleBtn.type = "button";
   highToggleBtn.className = "filter-toggle-btn";
+  highToggleBtn.title = "Toggle the low-pass stage.";
   highToggleBtn.onclick = () => {
     highCutEnabled = !highCutEnabled;
     updateFilterToggleButtons();
@@ -581,34 +608,12 @@ function buildControls() {
     renderMeta();
   };
   const highRow = document.createElement("div");
-  highRow.className = "grid grid-cols-[auto_56px_auto] gap-2 items-center";
+  highRow.className = "grid grid-cols-[auto_72px_auto_72px_auto] gap-2 items-center";
   highRow.appendChild(highLbl);
   highRow.appendChild(highCutInput);
+  highRow.appendChild(highSixDbLbl);
+  highRow.appendChild(highCutSixDbInput);
   highRow.appendChild(highToggleBtn);
-
-  const engineRow = document.createElement("div");
-  engineRow.className = "grid grid-cols-[auto_1fr] gap-2 items-center";
-  const engineLbl = document.createElement("div");
-  engineLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
-  engineLbl.textContent = "Engine:";
-  filterEngineSelect = document.createElement("select");
-  filterEngineSelect.className = "p-2 border rounded bg-white w-full text-sm";
-  const optLegacy = document.createElement("option");
-  optLegacy.value = "legacy";
-  optLegacy.textContent = "Legacy biquad";
-  const optSos = document.createElement("option");
-  optSos.value = "sos";
-  optSos.textContent = "SOS biquad";
-  filterEngineSelect.appendChild(optLegacy);
-  filterEngineSelect.appendChild(optSos);
-  filterEngineSelect.value = "sos";
-  filterEngineSelect.onchange = () => {
-    redraw();
-    renderMeta();
-  };
-  engineRow.appendChild(engineLbl);
-  engineRow.appendChild(filterEngineSelect);
-  filterEngineSelect.title = "Filter implementation selector.";
 
   const dcRow = document.createElement("div");
   dcRow.className = "grid grid-cols-[auto_1fr] gap-2 items-center";
@@ -626,6 +631,39 @@ function buildControls() {
   dcRow.appendChild(dcLbl);
   dcRow.appendChild(dcRestoreCheckbox);
   dcRestoreCheckbox.title = "Restore original mean after filtering/scaling.";
+
+  const padRow = document.createElement("div");
+  padRow.className = "grid grid-cols-[auto_auto_72px] gap-2 items-center";
+  const padLbl = document.createElement("div");
+  padLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
+  padLbl.textContent = "Edge pad:";
+  edgePaddingCheckbox = document.createElement("input");
+  edgePaddingCheckbox.type = "checkbox";
+  edgePaddingCheckbox.className = "h-4 w-4 justify-self-start";
+  edgePaddingCheckbox.checked = false;
+  edgePaddingCheckbox.onchange = () => {
+    redraw();
+    renderMeta();
+  };
+  edgePaddingCheckbox.title = "Reflect-pad before filtering, then crop the padded region afterward.";
+  edgePaddingSecondsInput = document.createElement("input");
+  edgePaddingSecondsInput.type = "text";
+  edgePaddingSecondsInput.inputMode = "decimal";
+  edgePaddingSecondsInput.placeholder = "1.0";
+  edgePaddingSecondsInput.value = "1.0";
+  edgePaddingSecondsInput.className = "p-2 border rounded bg-white w-full";
+  edgePaddingSecondsInput.title = "Padding duration in seconds on each side when edge padding is enabled.";
+  edgePaddingSecondsInput.oninput = () => {
+    redraw();
+    renderMeta();
+  };
+  padRow.appendChild(padLbl);
+  padRow.appendChild(edgePaddingCheckbox);
+  padRow.appendChild(edgePaddingSecondsInput);
+
+  const durationNote = document.createElement("div");
+  durationNote.className = "text-xs text-slate-600 leading-tight";
+  durationNote.textContent = "Rule of thumb: 0.1 Hz needs about 10 s per cycle, 0.01 Hz about 100 s. One cycle is the minimum; several cycles are preferred.";
 
   const viewCard = document.createElement("div");
   viewCard.className = "rounded border border-slate-200 p-3 flex flex-col space-y-2";
@@ -654,18 +692,15 @@ function buildControls() {
   plotModeSelect.title = "Choose which plot panel is shown.";
   viewRow.appendChild(viewLbl);
   viewRow.appendChild(plotModeSelect);
-  viewCard.appendChild(viewTitle);
   viewCard.appendChild(viewRow);
 
   fDiv.appendChild(lowRow);
   fDiv.appendChild(highRow);
-  fDiv.appendChild(engineRow);
   fDiv.appendChild(dcRow);
+  fDiv.appendChild(padRow);
+  fDiv.appendChild(durationNote);
   const notesDiv = document.createElement("div");
-  notesDiv.className = "rounded border border-slate-200 p-3 flex flex-col space-y-2";
-  const notesLabel = document.createElement("div");
-  notesLabel.className = "font-semibold";
-  notesLabel.textContent = "Notes";
+  notesDiv.className = "pt-2 flex flex-col space-y-2";
   notesInput = document.createElement("textarea");
   notesInput.rows = 1;
   notesInput.placeholder = "Notes about processing choices, rationale, caveats...";
@@ -674,32 +709,48 @@ function buildControls() {
   notesInput.style.overflowY = "auto";
   notesInput.style.resize = "vertical";
   notesInput.className = "p-2 border rounded bg-white w-full text-sm";
-  notesDiv.appendChild(notesLabel);
   notesDiv.appendChild(notesInput);
 
-  selectRow.appendChild(wlDiv);
-  selectRow.appendChild(chDiv);
-  processRow.appendChild(exDiv);
-  processRow.appendChild(fDiv);
-  grid.appendChild(notesDiv);
-  grid.appendChild(selectRow);
-  grid.appendChild(pipelineDiv);
-  grid.appendChild(processRow);
+  const accordionStack = document.createElement("div");
+  accordionStack.className = "flex flex-col gap-2";
+  accordionStack.appendChild(createAccordionSection("Import", importDiv, true));
+  accordionStack.appendChild(createAccordionSection("Actions", actionsDiv, false));
+  accordionStack.appendChild(createAccordionSection("Protocol", protocolDiv, false));
+  accordionStack.appendChild(createAccordionSection("Plot View", viewCard, false));
+  if (data.wl1) {
+    recordingSummaryContentEl = document.createElement("div");
+    recordingSummaryContentEl.className = "pt-2";
+    fileSourcesContentEl = document.createElement("div");
+    fileSourcesContentEl.className = "pt-2";
+    eventsContentEl = document.createElement("div");
+    eventsContentEl.className = "pt-2";
+    accordionStack.appendChild(createAccordionSection("Recording Summary", recordingSummaryContentEl, true));
+    accordionStack.appendChild(createAccordionSection("File Sources", fileSourcesContentEl, false));
+    accordionStack.appendChild(createAccordionSection("Events", eventsContentEl, false));
+    accordionStack.appendChild(createAccordionSection("Wavelength", wlDiv, true));
+    accordionStack.appendChild(createAccordionSection("Channel", chDiv, false));
+    accordionStack.appendChild(createAccordionSection("Pipeline", pipelineDiv, false));
+    accordionStack.appendChild(createAccordionSection("Filter", fDiv, true));
+    accordionStack.appendChild(createAccordionSection("Cut Intervals", exDiv, false));
+    accordionStack.appendChild(createAccordionSection("Notes", notesDiv, false));
+  }
   rebuildRadioSelections();
   updateFilterToggleButtons();
   updatePipelineSummary();
 
-  if (protocolHost) {
-  protocolHost.innerHTML = "";
-  protocolHost.className = "min-w-[280px] w-full col-span-3 grid grid-cols-4 gap-2";
-  protocolHost.appendChild(protoBar);
-  protocolHost.appendChild(labelCard);
-  protocolHost.appendChild(summaryCard);
-  protocolHost.appendChild(viewCard);
-  protocolHost.classList.remove("hidden");
-  }
+  controls.appendChild(accordionStack);
+}
 
-  controls.appendChild(grid);
+function createAccordionSection(title, contentEl, openByDefault) {
+  const detail = document.createElement("details");
+  detail.className = "rounded border border-slate-200 p-2";
+  detail.open = !!openByDefault;
+  const summary = document.createElement("summary");
+  summary.className = "font-semibold cursor-pointer select-none";
+  summary.textContent = title;
+  detail.appendChild(summary);
+  detail.appendChild(contentEl);
+  return detail;
 }
 
 function updateProtocolFilenameLabel() {
@@ -769,12 +820,17 @@ function resetProtocolUiOnly() {
   highCutEnabled = true;
   updateFilterToggleButtons();
   if (lowCutInput) lowCutInput.value = "0.1";
+  if (lowCutSixDbInput) lowCutSixDbInput.value = "0.05";
   if (highCutInput) highCutInput.value = "10.0";
-  if (filterEngineSelect) filterEngineSelect.value = "sos";
+  if (highCutSixDbInput) highCutSixDbInput.value = "12.5";
+  if (filterEngineSelect) filterEngineSelect.value = "rjg_sos";
   if (dcRestoreCheckbox) dcRestoreCheckbox.checked = true;
+  if (edgePaddingCheckbox) edgePaddingCheckbox.checked = false;
+  if (edgePaddingSecondsInput) edgePaddingSecondsInput.value = "1.0";
   if (signalDomainSelect) signalDomainSelect.value = "intensity";
   filterStepEnabled = true;
   trimStepEnabled = true;
+  amplitudePreservationMode = "none";
   if (filterStepCheckbox) filterStepCheckbox.checked = filterStepEnabled;
   if (trimStepCheckbox) trimStepCheckbox.checked = trimStepEnabled;
   if (plotModeSelect) plotModeSelect.value = currentPlotMode;
@@ -799,25 +855,18 @@ function redraw() {
   let filtered = raw.slice();
   let filterLabel = "no filter";
 
-  const low = parseFloat(lowCutInput.value);
-  const high = parseFloat(highCutInput.value);
-  const requestedLowHz = (filterStepEnabled && lowCutEnabled && Number.isFinite(low)) ? low : null;
-  const requestedHighHz = (filterStepEnabled && highCutEnabled && Number.isFinite(high)) ? high : null;
-  const validated = validateFilterCutoffs(samplingRate, requestedLowHz, requestedHighHz);
-  const lowHz = validated.lowHz;
-  const highHz = validated.highHz;
+  const requestedSpec = getRequestedFilterSpec();
+  const validated = validateFilterSpec(samplingRate, requestedSpec);
   const filterEngine = getFilterEngine();
   const dcRestore = isDcRestoreEnabled();
 
-  if (filterStepEnabled && (lowHz !== null || highHz !== null)) {
-    filtered = butterworth4(raw, samplingRate, lowHz, highHz, filterEngine);
-    filtered = rmsNormalize(raw, filtered, Math.ceil(samplingRate || 0));
+  if (filterStepEnabled && validated.enabled) {
+    filtered = applyRjgButterworth(raw, samplingRate, validated, filterEngine);
+    if (amplitudePreservationMode === "rms_normalize_to_pre_filter") {
+      filtered = rmsNormalize(raw, filtered, Math.ceil(samplingRate || 0));
+    }
     if (dcRestore) filtered = restoreDcMean(raw, filtered);
-
-    if (lowHz && highHz) filterLabel = "BP " + lowHz + "-" + highHz + " Hz";
-    else if (lowHz) filterLabel = "HP " + lowHz + " Hz";
-    else if (highHz) filterLabel = "LP " + highHz + " Hz";
-    else filterLabel = "filter enabled";
+    filterLabel = describeFilterSpec(validated);
   } else if (!filterStepEnabled) {
     filterLabel = "disabled";
   }
@@ -827,33 +876,36 @@ function redraw() {
   const trimmedEvents = trimStepEnabled
     ? adjustEvents(events, intervals)
     : events.map(e => ({ time: e.sample / samplingRate, code: e.code }));
+  const rawEvents = events.map(e => ({ time: e.sample / samplingRate, code: e.code }));
+  const rawDisplay = getDisplayWindow(raw, rawEvents, intervals, samplingRate, validated);
+  const processedDisplay = getDisplayWindow(processed, trimmedEvents, null, samplingRate, validated);
 
   const wlLabel = currentWavelength === "wl1" ? "760 nm" : "850 nm";
   const chLabel = channelLabels[currentChannel];
   const domainLabel = signalDomain === "delta_od" ? "Delta OD" : "Intensity";
-  if (rawPlotHeaderEl) rawPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Input (" + domainLabel + ") | " + formatStats(computeStats(raw));
-  if (trimPlotHeaderEl) trimPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Output (" + filterLabel + (trimStepEnabled ? ", trim on" : ", trim off") + ") | " + formatStats(computeStats(processed));
+  if (rawPlotHeaderEl) rawPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Input (" + domainLabel + ") | " + formatStats(computeStats(rawDisplay.series));
+  if (trimPlotHeaderEl) trimPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Output (" + filterLabel + (trimStepEnabled ? ", trim on" : ", trim off") + ") | " + formatStats(computeStats(processedDisplay.series));
 
   drawPlot(
     ctxRaw,
     canvasRaw,
-    raw,
+    rawDisplay.series,
     samplingRate,
-    intervals,
-    events.map(e => ({ time: e.sample / samplingRate, code: e.code })),
+    rawDisplay.intervals,
+    rawDisplay.events,
     wlLabel + " " + chLabel + " Input (" + domainLabel + ")",
-    formatStats(computeStats(raw))
+    formatStats(computeStats(rawDisplay.series))
   );
 
   drawPlot(
     ctxTrim,
     canvasTrim,
-    processed,
+    processedDisplay.series,
     samplingRate,
-    null,
-    trimmedEvents,
+    processedDisplay.intervals,
+    processedDisplay.events,
     wlLabel + " " + chLabel + " Output (" + filterLabel + ")",
-    formatStats(computeStats(processed))
+    formatStats(computeStats(processedDisplay.series))
   );
 }
 
@@ -861,9 +913,11 @@ function redraw() {
 
 function renderMeta() {
   if (!data.wl1 || !samplingRate) return;
+  if (!recordingSummaryContentEl || !fileSourcesContentEl || !eventsContentEl) return;
 
   const summary = buildProtocolSummary(buildProtocolObject());
   updateProtocolSummaryLabel(summary);
+  metaDiv.textContent = "";
 
   const bHdr = basename(sources.hdr) || "missing";
   const bWl1 = basename(sources.wl1) || "missing";
@@ -871,21 +925,13 @@ function renderMeta() {
   const bEvt = basename(sources.evt) || "none";
   const bProbe = basename(sources.probeMat) || "none";
 
-  const low = parseFloat(lowCutInput.value);
-  const high = parseFloat(highCutInput.value);
-  const requestedLowHz = (filterStepEnabled && lowCutEnabled && Number.isFinite(low)) ? low : null;
-  const requestedHighHz = (filterStepEnabled && highCutEnabled && Number.isFinite(high)) ? high : null;
-  const validated = validateFilterCutoffs(samplingRate, requestedLowHz, requestedHighHz);
-  const lowHz = validated.lowHz;
-  const highHz = validated.highHz;
+  const validated = validateFilterSpec(samplingRate, getRequestedFilterSpec());
 
   let filterText = filterStepEnabled ? "off" : "disabled";
-  if (lowHz !== null && highHz !== null) filterText = "BP " + lowHz + "-" + highHz + " Hz";
-  else if (lowHz !== null) filterText = "HP " + lowHz + " Hz";
-  else if (highHz !== null) filterText = "LP " + highHz + " Hz";
-  const filterEngine = getFilterEngine();
+  if (validated.enabled) filterText = describeFilterSpec(validated);
   const dcRestore = isDcRestoreEnabled();
   const filterWarning = validated.warning ? escapeHtml(validated.warning) : "";
+  const durationGuide = escapeHtml(buildDurationGuidance(validated, data.wl1.length / samplingRate));
 
   const labelText = (branchTagInput ? branchTagInput.value.trim() : "") || "none";
   let eventRows = "";
@@ -900,59 +946,50 @@ function renderMeta() {
     });
   }
 
-  const html = ""
-    + "<div class='space-y-2'>"
-    + "  <details class='rounded border border-slate-200 p-2'>"
-    + "    <summary class='font-semibold cursor-pointer select-none'>Recording Summary</summary>"
-    + "    <div class='grid grid-cols-2 gap-x-3 gap-y-1 text-sm mt-2'>"
-    + "      <div class='text-slate-600'>Dataset</div><div class='break-all'>" + escapeHtml(datasetLabel) + "</div>"
-    + "      <div class='text-slate-600'>Input type</div><div>" + escapeHtml(inputTypeLabel) + "</div>"
-    + "      <div class='text-slate-600'>Sampling rate</div><div>" + samplingRate + " Hz</div>"
-    + "      <div class='text-slate-600'>Samples</div><div>" + data.wl1.length + "</div>"
-    + "      <div class='text-slate-600'>Duration</div><div>" + (data.wl1.length / samplingRate).toFixed(2) + " s</div>"
-    + "      <div class='text-slate-600'>Channels</div><div>" + data.wl1[0].length + "</div>"
-    + "      <div class='text-slate-600'>Signal domain</div><div>" + (getSignalDomain() === "delta_od" ? "Delta OD" : "Intensity (a.u.)") + "</div>"
-    + "      <div class='text-slate-600'>Filter</div><div>" + escapeHtml(filterText) + "</div>"
-    + "      <div class='text-slate-600'>Filter step</div><div>" + (filterStepEnabled ? "on" : "off") + "</div>"
-    + "      <div class='text-slate-600'>Filter engine</div><div>" + escapeHtml(filterEngine) + "</div>"
-    + "      <div class='text-slate-600'>DC restore</div><div>" + (dcRestore ? "on" : "off") + "</div>"
-    + "      <div class='text-slate-600'>Trim step</div><div>" + (trimStepEnabled ? "on" : "off") + "</div>"
-    + "      <div class='text-slate-600'>Filter note</div><div>" + (filterWarning || "none") + "</div>"
-    + "      <div class='text-slate-600'>Protocol label</div><div>" + escapeHtml(labelText) + "</div>"
-    + "      <div class='text-slate-600'>App version</div><div>" + APP_VERSION + "</div>"
-    + "      <div class='text-slate-600'>Protocol schema</div><div>" + PROTOCOL_SCHEMA_VERSION + "</div>"
-    + "    </div>"
-    + "  </details>"
-    + "  <details class='rounded border border-slate-200 p-2'>"
-    + "    <summary class='font-semibold cursor-pointer select-none'>File Sources</summary>"
-    + "    <div class='grid grid-cols-2 gap-x-3 gap-y-1 text-sm mt-2'>"
-    + "      <div class='text-slate-600'>HDR</div><div>" + escapeHtml(bHdr) + "</div>"
-    + "      <div class='text-slate-600'>WL1</div><div>" + escapeHtml(bWl1) + "</div>"
-    + "      <div class='text-slate-600'>WL2</div><div>" + escapeHtml(bWl2) + "</div>"
-    + "      <div class='text-slate-600'>EVT</div><div>" + escapeHtml(bEvt) + "</div>"
-    + "      <div class='text-slate-600'>probeInfo</div><div>" + escapeHtml(bProbe) + "</div>"
-    + "      <div class='text-slate-600'>Sampling rate from</div><div>" + escapeHtml(basename(sources.samplingRateFrom) || "?") + "</div>"
-    + "      <div class='text-slate-600'>Events from</div><div>" + escapeHtml(basename(sources.eventsFrom) || "?") + "</div>"
-    + "      <div class='text-slate-600'>Channel labels from</div><div>" + escapeHtml(basename(sources.channelLabelsFrom) || "?") + "</div>"
-    + "    </div>"
-    + "  </details>"
-    + "  <details class='rounded border border-slate-200 p-2'>"
-    + "    <summary class='font-semibold cursor-pointer select-none'>Events</summary>"
-    + "    <table class='w-full text-sm border-collapse mt-2' style='table-layout: fixed;'>"
-    + "      <thead>"
-    + "        <tr class='bg-slate-50'>"
-    + "          <th class='border px-2 py-1 text-left' style='width: 80px;'>Time (s)</th>"
-    + "          <th class='border px-2 py-1 text-left' style='width: 60px;'>Code</th>"
-    + "        </tr>"
-    + "      </thead>"
-    + "      <tbody>"
-    + eventRows
-    + "      </tbody>"
-    + "    </table>"
-    + "  </details>"
+  recordingSummaryContentEl.innerHTML = ""
+    + "<div class='grid grid-cols-2 gap-x-3 gap-y-1 text-sm'>"
+    + "  <div class='text-slate-600'>Dataset</div><div class='break-all'>" + escapeHtml(datasetLabel) + "</div>"
+    + "  <div class='text-slate-600'>Input type</div><div>" + escapeHtml(inputTypeLabel) + "</div>"
+    + "  <div class='text-slate-600'>Sampling rate</div><div>" + samplingRate + " Hz</div>"
+    + "  <div class='text-slate-600'>Samples</div><div>" + data.wl1.length + "</div>"
+    + "  <div class='text-slate-600'>Duration</div><div>" + (data.wl1.length / samplingRate).toFixed(2) + " s</div>"
+    + "  <div class='text-slate-600'>Channels</div><div>" + data.wl1[0].length + "</div>"
+    + "  <div class='text-slate-600'>Signal domain</div><div>" + (getSignalDomain() === "delta_od" ? "Delta OD" : "Intensity (a.u.)") + "</div>"
+    + "  <div class='text-slate-600'>Filter</div><div>" + escapeHtml(filterText) + "</div>"
+    + "  <div class='text-slate-600'>Filter step</div><div>" + (filterStepEnabled ? "on" : "off") + "</div>"
+    + "  <div class='text-slate-600'>DC restore</div><div>" + (dcRestore ? "on" : "off") + "</div>"
+    + "  <div class='text-slate-600'>Trim step</div><div>" + (trimStepEnabled ? "on" : "off") + "</div>"
+    + "  <div class='text-slate-600'>Filter note</div><div>" + (filterWarning || "none") + "</div>"
+    + "  <div class='text-slate-600'>Duration guide</div><div>" + durationGuide + "</div>"
+    + "  <div class='text-slate-600'>Protocol label</div><div>" + escapeHtml(labelText) + "</div>"
+    + "  <div class='text-slate-600'>App version</div><div>" + APP_VERSION + "</div>"
+    + "  <div class='text-slate-600'>Protocol schema</div><div>" + PROTOCOL_SCHEMA_VERSION + "</div>"
     + "</div>";
 
-  metaDiv.innerHTML = html;
+  fileSourcesContentEl.innerHTML = ""
+    + "<div class='grid grid-cols-2 gap-x-3 gap-y-1 text-sm'>"
+    + "  <div class='text-slate-600'>HDR</div><div>" + escapeHtml(bHdr) + "</div>"
+    + "  <div class='text-slate-600'>WL1</div><div>" + escapeHtml(bWl1) + "</div>"
+    + "  <div class='text-slate-600'>WL2</div><div>" + escapeHtml(bWl2) + "</div>"
+    + "  <div class='text-slate-600'>EVT</div><div>" + escapeHtml(bEvt) + "</div>"
+    + "  <div class='text-slate-600'>probeInfo</div><div>" + escapeHtml(bProbe) + "</div>"
+    + "  <div class='text-slate-600'>Sampling rate from</div><div>" + escapeHtml(basename(sources.samplingRateFrom) || "?") + "</div>"
+    + "  <div class='text-slate-600'>Events from</div><div>" + escapeHtml(basename(sources.eventsFrom) || "?") + "</div>"
+    + "  <div class='text-slate-600'>Channel labels from</div><div>" + escapeHtml(basename(sources.channelLabelsFrom) || "?") + "</div>"
+    + "</div>";
+
+  eventsContentEl.innerHTML = ""
+    + "<table class='w-full text-sm border-collapse' style='table-layout: fixed;'>"
+    + "  <thead>"
+    + "    <tr class='bg-slate-50'>"
+    + "      <th class='border px-2 py-1 text-left' style='width: 80px;'>Time (s)</th>"
+    + "      <th class='border px-2 py-1 text-left' style='width: 60px;'>Code</th>"
+    + "    </tr>"
+    + "  </thead>"
+    + "  <tbody>"
+    + eventRows
+    + "  </tbody>"
+    + "</table>";
 }
 
 /* ================= Protocol object, export, import ================= */
@@ -962,15 +999,7 @@ function buildProtocolObject() {
   const notes = notesInput ? notesInput.value : "";
 
   const intervals = parseIntervals(exclusionTable.value);
-
-  const low = parseFloat(lowCutInput.value);
-  const high = parseFloat(highCutInput.value);
-
-  const requestedLowHz = (filterStepEnabled && lowCutEnabled && Number.isFinite(low)) ? low : null;
-  const requestedHighHz = (filterStepEnabled && highCutEnabled && Number.isFinite(high)) ? high : null;
-  const validated = validateFilterCutoffs(samplingRate, requestedLowHz, requestedHighHz);
-  const lowHz = validated.lowHz;
-  const highHz = validated.highHz;
+  const validated = validateFilterSpec(samplingRate, getRequestedFilterSpec());
   const filterEngine = getFilterEngine();
   const dcRestore = isDcRestoreEnabled();
 
@@ -984,14 +1013,21 @@ function buildProtocolObject() {
 
   steps.push({
     step: "filter_butterworth_iir",
-    enabled: filterStepEnabled && (lowHz !== null || highHz !== null),
-    order: 4,
-    lowHz: lowHz,
-    highHz: highHz,
+    enabled: filterStepEnabled && validated.enabled,
+    order: validated.enabled ? "auto" : null,
+    lowHz: validated.highpassPassHz,
+    highHz: validated.lowpassPassHz,
+    lowSixDbHz: validated.highpassSixDbHz,
+    highSixDbHz: validated.lowpassSixDbHz,
+    edgePaddingEnabled: validated.edgePaddingEnabled,
+    edgePaddingMode: validated.edgePaddingMode,
+    edgePaddingSeconds: validated.edgePaddingSeconds,
+    passbandRippleDb: DEFAULT_PASSBAND_RIPPLE_DB,
+    stopbandAttenuationDb: DEFAULT_STOPBAND_ATTENUATION_DB,
     implementation: filterEngine,
     dcRestore: dcRestore,
     plotView: currentPlotMode,
-    amplitudePreservation: "rms_normalize_to_pre_filter"
+    amplitudePreservation: amplitudePreservationMode
   });
 
   steps.push({
@@ -1061,15 +1097,24 @@ function buildProtocolSummary(protocol) {
   let filterPart = "filter=off";
   const f = (protocol.steps || []).find(s => s.step === "filter_butterworth_iir");
   if (f && f.enabled) {
-    const low = (f.lowHz === null || typeof f.lowHz === "undefined") ? "" : String(f.lowHz);
-    const high = (f.highHz === null || typeof f.highHz === "undefined") ? "" : String(f.highHz);
-    if (low && high) filterPart = "filter=bp(" + low + "-" + high + ") o" + String(f.order);
-    else if (low) filterPart = "filter=hp(" + low + ") o" + String(f.order);
-    else if (high) filterPart = "filter=lp(" + high + ") o" + String(f.order);
-    else filterPart = "filter=on o" + String(f.order);
-    if (f.implementation) filterPart += " " + String(f.implementation);
+    const low = numberOrNull(f.lowHz);
+    const high = numberOrNull(f.highHz);
+    const lowSix = numberOrNull(f.lowSixDbHz);
+    const highSix = numberOrNull(f.highSixDbHz);
+    const padEnabled = !!f.edgePaddingEnabled;
+    const padSeconds = numberOrNull(f.edgePaddingSeconds);
+    if (low !== null && high !== null) {
+      filterPart = "filter=bp[" + formatHz(lowSix) + " " + formatHz(low) + " " + formatHz(high) + " " + formatHz(highSix) + "]";
+    } else if (low !== null) {
+      filterPart = "filter=hp[" + formatHz(lowSix) + " " + formatHz(low) + "]";
+    } else if (high !== null) {
+      filterPart = "filter=lp[" + formatHz(high) + " " + formatHz(highSix) + "]";
+    } else {
+      filterPart = "filter=on";
+    }
     if (f.dcRestore) filterPart += " dc";
-    filterPart += " amp=rms";
+    if (padEnabled) filterPart += " pad=reflect:" + formatHz(padSeconds) + "s";
+    if (f.amplitudePreservation === "rms_normalize_to_pre_filter") filterPart += " amp=rms";
   }
 
   return labelPart + "wl=" + wlTxt + " | ch=" + chLbl + " | " + domainPart + " | " + filterPart + " | " + trimPart;
@@ -1161,23 +1206,39 @@ function applyProtocol(protocol) {
     ? f.plotView
     : currentPlotMode;
   if (f) {
+    const hpPass = numberOrNull(f.lowHz);
+    const lpPass = numberOrNull(f.highHz);
+    const hpSix = numberOrNull(f.lowSixDbHz);
+    const lpSix = numberOrNull(f.highSixDbHz);
+    const padEnabled = !!f.edgePaddingEnabled;
+    const padSeconds = numberOrNull(f.edgePaddingSeconds);
     filterStepEnabled = !!f.enabled;
-    lowCutEnabled = filterStepEnabled && (f.lowHz !== null && typeof f.lowHz !== "undefined");
-    highCutEnabled = filterStepEnabled && (f.highHz !== null && typeof f.highHz !== "undefined");
-    lowCutInput.value = (f.lowHz === null || typeof f.lowHz === "undefined") ? "0.1" : String(f.lowHz);
-    highCutInput.value = (f.highHz === null || typeof f.highHz === "undefined") ? "10.0" : String(f.highHz);
+    lowCutEnabled = filterStepEnabled && hpPass !== null;
+    highCutEnabled = filterStepEnabled && lpPass !== null;
+    lowCutInput.value = hpPass === null ? "0.1" : String(hpPass);
+    if (lowCutSixDbInput) lowCutSixDbInput.value = String(hpSix === null ? deriveDefaultHighpassSixDbHz(hpPass || 0.1) : hpSix);
+    highCutInput.value = lpPass === null ? "10.0" : String(lpPass);
+    if (highCutSixDbInput) highCutSixDbInput.value = String(lpSix === null ? deriveDefaultLowpassSixDbHz(lpPass || 10.0) : lpSix);
     if (filterEngineSelect) {
-      filterEngineSelect.value = (f.implementation === "legacy") ? "legacy" : "sos";
+      filterEngineSelect.value = "rjg_sos";
     }
     if (dcRestoreCheckbox) dcRestoreCheckbox.checked = !!f.dcRestore;
+    if (edgePaddingCheckbox) edgePaddingCheckbox.checked = padEnabled;
+    if (edgePaddingSecondsInput) edgePaddingSecondsInput.value = String(padSeconds === null ? 1.0 : padSeconds);
+    amplitudePreservationMode = "none";
   } else {
     filterStepEnabled = true;
     lowCutEnabled = true;
     highCutEnabled = true;
     lowCutInput.value = "0.1";
+    if (lowCutSixDbInput) lowCutSixDbInput.value = "0.05";
     highCutInput.value = "10.0";
-    if (filterEngineSelect) filterEngineSelect.value = "sos";
+    if (highCutSixDbInput) highCutSixDbInput.value = "12.5";
+    if (filterEngineSelect) filterEngineSelect.value = "rjg_sos";
     if (dcRestoreCheckbox) dcRestoreCheckbox.checked = true;
+    if (edgePaddingCheckbox) edgePaddingCheckbox.checked = false;
+    if (edgePaddingSecondsInput) edgePaddingSecondsInput.value = "1.0";
+    amplitudePreservationMode = "none";
   }
   if (filterStepCheckbox) filterStepCheckbox.checked = filterStepEnabled;
   if (plotModeSelect) plotModeSelect.value = requestedPlotView;
@@ -1281,7 +1342,24 @@ function normalizeProtocol(raw) {
   if (!out.steps.length) {
     out.steps = [
       { step: "transform_intensity_to_od", enabled: false, output: "delta_od" },
-      { step: "filter_butterworth_iir", enabled: false, order: 4, lowHz: null, highHz: null, implementation: "sos", dcRestore: true, plotView: "both", amplitudePreservation: "rms_normalize_to_pre_filter" },
+      {
+        step: "filter_butterworth_iir",
+        enabled: false,
+        order: null,
+        lowHz: null,
+        highHz: null,
+        lowSixDbHz: null,
+        highSixDbHz: null,
+        edgePaddingEnabled: false,
+        edgePaddingMode: "reflect",
+        edgePaddingSeconds: 1.0,
+        passbandRippleDb: DEFAULT_PASSBAND_RIPPLE_DB,
+        stopbandAttenuationDb: DEFAULT_STOPBAND_ATTENUATION_DB,
+        implementation: "rjg_sos",
+        dcRestore: true,
+        plotView: "both",
+        amplitudePreservation: "none"
+      },
       { step: "trim", enabled: true, intervalsSeconds: [] }
     ];
   }
@@ -1306,13 +1384,26 @@ function normalizeProtocol(raw) {
   const f = out.steps.find(s => s.step === "filter_butterworth_iir");
   if (f) {
     f.enabled = !!f.enabled;
-    f.order = 4;
-    f.lowHz = (f.lowHz === null || typeof f.lowHz === "undefined") ? null : (Number.isFinite(Number(f.lowHz)) ? Number(f.lowHz) : null);
-    f.highHz = (f.highHz === null || typeof f.highHz === "undefined") ? null : (Number.isFinite(Number(f.highHz)) ? Number(f.highHz) : null);
-    f.implementation = f.implementation === "legacy" ? "legacy" : "sos";
+    f.order = f.enabled ? "auto" : null;
+    f.lowHz = numberOrNull(f.lowHz);
+    f.highHz = numberOrNull(f.highHz);
+    f.lowSixDbHz = numberOrNull(f.lowSixDbHz);
+    f.highSixDbHz = numberOrNull(f.highSixDbHz);
+    f.edgePaddingEnabled = !!f.edgePaddingEnabled;
+    f.edgePaddingMode = "reflect";
+    f.edgePaddingSeconds = numberOrNull(f.edgePaddingSeconds) === null ? 1.0 : Number(f.edgePaddingSeconds);
+    if (f.lowHz !== null && f.lowSixDbHz === null) {
+      f.lowSixDbHz = deriveDefaultHighpassSixDbHz(f.lowHz);
+    }
+    if (f.highHz !== null && f.highSixDbHz === null) {
+      f.highSixDbHz = deriveDefaultLowpassSixDbHz(f.highHz);
+    }
+    f.passbandRippleDb = numberOrNull(f.passbandRippleDb) === null ? DEFAULT_PASSBAND_RIPPLE_DB : Number(f.passbandRippleDb);
+    f.stopbandAttenuationDb = numberOrNull(f.stopbandAttenuationDb) === null ? DEFAULT_STOPBAND_ATTENUATION_DB : Number(f.stopbandAttenuationDb);
+    f.implementation = "rjg_sos";
     f.dcRestore = (typeof f.dcRestore === "boolean") ? f.dcRestore : true;
     f.plotView = (f.plotView === "raw" || f.plotView === "trimmed" || f.plotView === "both") ? f.plotView : "both";
-    if (typeof f.amplitudePreservation !== "string") f.amplitudePreservation = "rms_normalize_to_pre_filter";
+    f.amplitudePreservation = "none";
   }
 
   out.protocolSummary = buildProtocolSummary(out);
@@ -1351,6 +1442,70 @@ function sanitizeFilename(s) {
     .replace(/[^A-Za-z0-9._-]+/g, "_")
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+function numberOrNull(v) {
+  if (v === null || typeof v === "undefined" || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatHz(v) {
+  return v === null || !Number.isFinite(Number(v)) ? "?" : String(Number(v));
+}
+
+function deriveDefaultHighpassSixDbHz(passHz) {
+  const v = numberOrNull(passHz);
+  if (v === null || v <= 0) return null;
+  return Math.max(1e-6, v - Math.max(v * 0.25, 0.05));
+}
+
+function deriveDefaultLowpassSixDbHz(passHz) {
+  const v = numberOrNull(passHz);
+  if (v === null || v <= 0) return null;
+  return v + Math.max(v * 0.25, 0.05);
+}
+
+function describeFilterSpec(spec) {
+  if (!spec || !spec.enabled) return "no filter";
+  const hpPass = numberOrNull(spec.highpassPassHz);
+  const hpSix = numberOrNull(spec.highpassSixDbHz);
+  const lpPass = numberOrNull(spec.lowpassPassHz);
+  const lpSix = numberOrNull(spec.lowpassSixDbHz);
+  const padEnabled = !!spec.edgePaddingEnabled;
+  const padSeconds = numberOrNull(spec.edgePaddingSeconds);
+  let label = "filter enabled";
+
+  if (hpPass !== null && lpPass !== null) {
+    label = "BP [" + formatHz(hpSix) + " " + formatHz(hpPass) + " " + formatHz(lpPass) + " " + formatHz(lpSix) + "] Hz";
+  } else if (hpPass !== null) {
+    label = "HP [" + formatHz(hpSix) + " " + formatHz(hpPass) + "] Hz";
+  } else if (lpPass !== null) {
+    label = "LP [" + formatHz(lpPass) + " " + formatHz(lpSix) + "] Hz";
+  }
+  if (padEnabled) label += " + pad reflect " + formatHz(padSeconds) + " s";
+  return label;
+}
+
+function getSlowestFilterEdgeHz(spec) {
+  if (!spec) return null;
+  const candidates = [
+    numberOrNull(spec.highpassSixDbHz),
+    numberOrNull(spec.highpassPassHz),
+    numberOrNull(spec.lowpassPassHz),
+    numberOrNull(spec.lowpassSixDbHz)
+  ].filter(v => v !== null && v > 0);
+  return candidates.length ? Math.min(...candidates) : null;
+}
+
+function buildDurationGuidance(spec, durationSeconds) {
+  const slowestHz = getSlowestFilterEdgeHz(spec);
+  if (slowestHz === null || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return "No active filter edge.";
+  }
+  const cycleSeconds = 1 / slowestHz;
+  const cycles = durationSeconds / cycleSeconds;
+  return "Slowest edge " + formatHz(slowestHz) + " Hz -> " + cycleSeconds.toFixed(1) + " s/cycle; record " + durationSeconds.toFixed(1) + " s = " + cycles.toFixed(1) + " cycles. One cycle minimum, three or more preferred.";
 }
 
 function escapeHtml(s) {
@@ -1467,6 +1622,45 @@ function defaultChannelLabels() {
   return data.wl1[0].map((_, i) => "Channel " + (i + 1));
 }
 
+function getDisplayWindow(series, eventsIn, intervalsIn, fs, filterSpec) {
+  const out = {
+    series: Array.isArray(series) ? series.slice() : [],
+    events: Array.isArray(eventsIn) ? eventsIn.map(e => ({ time: e.time, code: e.code })) : [],
+    intervals: Array.isArray(intervalsIn) ? intervalsIn.map(intv => ({ start: intv.start, end: intv.end })) : intervalsIn
+  };
+
+  const cropSamples = getEdgeDisplayCropSamples(out.series.length, fs, filterSpec);
+  if (cropSamples <= 0 || !out.series.length) return out;
+
+  const cropSeconds = cropSamples / fs;
+  const fullDuration = out.series.length / fs;
+  const keptEnd = fullDuration - cropSeconds;
+  out.series = out.series.slice(cropSamples, out.series.length - cropSamples);
+
+  out.events = out.events
+    .filter(e => Number.isFinite(e.time) && e.time >= cropSeconds && e.time <= keptEnd)
+    .map(e => ({ time: e.time - cropSeconds, code: e.code }));
+
+  if (Array.isArray(out.intervals)) {
+    out.intervals = out.intervals
+      .map(intv => ({
+        start: Math.max(intv.start, cropSeconds) - cropSeconds,
+        end: Math.min(intv.end, keptEnd) - cropSeconds
+      }))
+      .filter(intv => Number.isFinite(intv.start) && Number.isFinite(intv.end) && intv.end > intv.start);
+  }
+
+  return out;
+}
+
+function getEdgeDisplayCropSamples(length, fs, filterSpec) {
+  if (!filterSpec || !filterSpec.edgePaddingEnabled) return 0;
+  const seconds = numberOrNull(filterSpec.edgePaddingSeconds);
+  if (!Number.isFinite(fs) || fs <= 0 || seconds === null || seconds <= 0) return 0;
+  if (!Number.isFinite(length) || length < 3) return 0;
+  return Math.max(0, Math.min(Math.round(seconds * fs), Math.floor((length - 1) / 2)));
+}
+
 function rebuildRadioSelections() {
   const wlButtons = document.querySelectorAll("button[data-wl-choice]");
   wlButtons.forEach(b => {
@@ -1526,60 +1720,160 @@ function formatStats(s) {
     " | max " + formatMetricNumber(s.max);
 }
 
-function validateFilterCutoffs(fs, lowHz, highHz) {
-  let low = lowHz;
-  let high = highHz;
+function getRequestedFilterSpec() {
+  const hpPass = numberOrNull(lowCutInput ? lowCutInput.value : null);
+  const hpSix = numberOrNull(lowCutSixDbInput ? lowCutSixDbInput.value : null);
+  const lpPass = numberOrNull(highCutInput ? highCutInput.value : null);
+  const lpSix = numberOrNull(highCutSixDbInput ? highCutSixDbInput.value : null);
+
+  return {
+    highpassPassHz: filterStepEnabled && lowCutEnabled ? hpPass : null,
+    highpassSixDbHz: filterStepEnabled && lowCutEnabled ? hpSix : null,
+    lowpassPassHz: filterStepEnabled && highCutEnabled ? lpPass : null,
+    lowpassSixDbHz: filterStepEnabled && highCutEnabled ? lpSix : null,
+    edgePaddingEnabled: !!(edgePaddingCheckbox && edgePaddingCheckbox.checked),
+    edgePaddingMode: "reflect",
+    edgePaddingSeconds: numberOrNull(edgePaddingSecondsInput ? edgePaddingSecondsInput.value : null),
+    passbandRippleDb: DEFAULT_PASSBAND_RIPPLE_DB,
+    stopbandAttenuationDb: DEFAULT_STOPBAND_ATTENUATION_DB
+  };
+}
+
+function validateFilterSpec(fs, spec) {
   const warnings = [];
+  const requested = spec || {};
+
+  let hpPass = numberOrNull(requested.highpassPassHz);
+  let hpSix = numberOrNull(requested.highpassSixDbHz);
+  let lpPass = numberOrNull(requested.lowpassPassHz);
+  let lpSix = numberOrNull(requested.lowpassSixDbHz);
+  let edgePaddingEnabled = !!requested.edgePaddingEnabled;
+  let edgePaddingSeconds = numberOrNull(requested.edgePaddingSeconds);
 
   if (!Number.isFinite(fs) || fs <= 0) {
-    if (low !== null || high !== null) {
+    if (hpPass !== null || lpPass !== null) {
       warnings.push("Sampling rate is missing/invalid; filter disabled.");
     }
-    return { lowHz: null, highHz: null, warning: warnings.join(" ") };
+    return {
+      enabled: false,
+      highpassPassHz: null,
+      highpassSixDbHz: null,
+      lowpassPassHz: null,
+      lowpassSixDbHz: null,
+      edgePaddingEnabled: false,
+      edgePaddingMode: "reflect",
+      edgePaddingSeconds: null,
+      passbandRippleDb: DEFAULT_PASSBAND_RIPPLE_DB,
+      stopbandAttenuationDb: DEFAULT_STOPBAND_ATTENUATION_DB,
+      warning: warnings.join(" ")
+    };
   }
 
   const nyq = fs / 2;
   const minHz = Math.max(1e-6, nyq * 1e-6);
   const maxHz = nyq * 0.95;
+  const minGap = Math.max(minHz, nyq * 1e-4);
 
-  if (low !== null && low <= 0) {
-    warnings.push("Low cutoff must be > 0 Hz; clamped.");
-    low = minHz;
+  const clampHz = (value, label) => {
+    let out = value;
+    if (out === null) return null;
+    if (out <= 0) {
+      warnings.push(label + " must be > 0 Hz; clamped.");
+      out = minHz;
+    }
+    if (out >= nyq) {
+      warnings.push(label + " must be below Nyquist (" + nyq.toFixed(3) + " Hz); clamped.");
+      out = maxHz;
+    }
+    return out;
+  };
+
+  hpPass = clampHz(hpPass, "High-pass passband");
+  hpSix = clampHz(hpSix, "High-pass -6 dB edge");
+  lpPass = clampHz(lpPass, "Low-pass passband");
+  lpSix = clampHz(lpSix, "Low-pass -6 dB edge");
+
+  if (hpPass !== null && hpSix === null) hpSix = deriveDefaultHighpassSixDbHz(hpPass);
+  if (lpPass !== null && lpSix === null) lpSix = deriveDefaultLowpassSixDbHz(lpPass);
+
+  hpSix = clampHz(hpSix, "High-pass -6 dB edge");
+  lpSix = clampHz(lpSix, "Low-pass -6 dB edge");
+
+  if (hpPass !== null && hpSix !== null && hpSix >= hpPass) {
+    hpSix = Math.max(minHz, hpPass - minGap);
+    warnings.push("High-pass -6 dB edge must stay below the passband edge; adjusted.");
   }
 
-  if (high !== null && high <= 0) {
-    warnings.push("High cutoff must be > 0 Hz; clamped.");
-    high = minHz;
+  if (lpPass !== null && lpSix !== null && lpSix <= lpPass) {
+    lpSix = Math.min(maxHz, lpPass + minGap);
+    warnings.push("Low-pass -6 dB edge must stay above the passband edge; adjusted.");
   }
 
-  if (low !== null && low >= nyq) {
-    warnings.push("Low cutoff must be below Nyquist (" + nyq.toFixed(3) + " Hz); clamped.");
-    low = maxHz;
+  if (hpPass !== null && lpPass !== null && hpPass >= lpPass) {
+    lpPass = Math.min(maxHz, hpPass + minGap);
+    warnings.push("Band-pass passband edges were inverted or touching; low-pass passband adjusted.");
   }
 
-  if (high !== null && high >= nyq) {
-    warnings.push("High cutoff must be below Nyquist (" + nyq.toFixed(3) + " Hz); clamped.");
-    high = maxHz;
+  if (hpSix !== null && hpPass !== null && lpPass !== null && hpSix >= lpPass) {
+    hpSix = Math.max(minHz, hpPass - minGap);
+    warnings.push("High-pass -6 dB edge crossed the low-pass passband; adjusted.");
   }
 
-  if (low !== null && high !== null && low >= high) {
-    warnings.push("Low cutoff was >= high cutoff; swapped.");
-    const tmp = low;
-    low = high;
-    high = tmp;
+  if (lpSix !== null && hpPass !== null && lpPass !== null && lpSix <= hpPass) {
+    lpSix = Math.min(maxHz, lpPass + minGap);
+    warnings.push("Low-pass -6 dB edge crossed the high-pass passband; adjusted.");
   }
 
-  if (low !== null && high !== null && high - low < minHz) {
-    high = Math.min(maxHz, low + minHz);
-    warnings.push("Band limits were too close; high cutoff adjusted.");
+  const durationSeconds = data.wl1 ? (data.wl1.length / fs) : null;
+  const slowestHz = getSlowestFilterEdgeHz({
+    highpassPassHz: hpPass,
+    highpassSixDbHz: hpSix,
+    lowpassPassHz: lpPass,
+    lowpassSixDbHz: lpSix
+  });
+  if (slowestHz !== null && Number.isFinite(durationSeconds) && durationSeconds > 0) {
+    const cycles = durationSeconds * slowestHz;
+    if (cycles < 1) {
+      warnings.push("Record is shorter than one cycle at the slowest edge (" + formatHz(slowestHz) + " Hz).");
+    } else if (cycles < 3) {
+      warnings.push("Record spans only " + cycles.toFixed(1) + " cycles at the slowest edge; three or more are preferred.");
+    }
   }
 
-  return { lowHz: low, highHz: high, warning: warnings.join(" ") };
+  if (edgePaddingEnabled) {
+    if (edgePaddingSeconds === null || edgePaddingSeconds <= 0) {
+      edgePaddingSeconds = 1.0;
+      warnings.push("Edge padding seconds were missing/invalid; reset to 1.0 s.");
+    }
+    const maxPadSeconds = Math.max(0, (fs > 0 ? ((Math.max(0, data.wl1 ? data.wl1.length - 2 : fs * 5)) / fs) : 0));
+    if (Number.isFinite(maxPadSeconds) && maxPadSeconds > 0 && edgePaddingSeconds > maxPadSeconds) {
+      edgePaddingSeconds = maxPadSeconds;
+      warnings.push("Edge padding was too long for the loaded signal; reduced.");
+    }
+  } else {
+    edgePaddingSeconds = edgePaddingSeconds === null ? 1.0 : edgePaddingSeconds;
+  }
+
+  const enabled = hpPass !== null || lpPass !== null;
+
+  return {
+    enabled: enabled,
+    highpassPassHz: hpPass,
+    highpassSixDbHz: hpPass === null ? null : hpSix,
+    lowpassPassHz: lpPass,
+    lowpassSixDbHz: lpPass === null ? null : lpSix,
+    edgePaddingEnabled: edgePaddingEnabled,
+    edgePaddingMode: "reflect",
+    edgePaddingSeconds: edgePaddingSeconds,
+    passbandRippleDb: DEFAULT_PASSBAND_RIPPLE_DB,
+    stopbandAttenuationDb: DEFAULT_STOPBAND_ATTENUATION_DB,
+    warning: warnings.join(" ")
+  };
 }
 
 function getFilterEngine() {
-  if (!filterEngineSelect) return "sos";
-  return filterEngineSelect.value === "legacy" ? "legacy" : "sos";
+  if (!filterEngineSelect) return "rjg_sos";
+  return "rjg_sos";
 }
 
 function applyPlotMode() {

@@ -8,9 +8,22 @@ Desktop-only scope: this project does not target mobile layouts or mobile captur
 
 Current pipeline controls expose these ordered steps:
 - Input signal domain: `Intensity (a.u.)` or `Delta OD`
-- Butterworth filtering (legacy/SOS implementations)
+- Butterworth filtering
 - Interval trimming
 - Plot view selection (raw, trimmed, or both)
+
+## Filter Duration Guidance
+Low-frequency filter edges are constrained mainly by recording duration, not by FFT padding.
+
+- A useful rule of thumb is `1 / f` seconds for one cycle of a frequency `f`.
+- `0.1 Hz` needs about `10 s` for one cycle.
+- `0.01 Hz` needs about `100 s` for one cycle.
+- One cycle is only a minimum. Several cycles are preferred for stable behavior near the slowest edge.
+
+Sample rate still matters for the upper end:
+
+- With `fs = 62.5 Hz`, Nyquist is `31.25 Hz`.
+- Upper filter edges should stay comfortably below Nyquist.
 
 ## Usage
 Open the web app and load a NIRx data folder as a zip file.

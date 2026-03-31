@@ -1,5 +1,6 @@
-/legacy
+legacy/
 node_modules/
 screenshots/
-references/*.zip
-references/unpacked/
+nirx-local/
+references/
+chat_histories/
