@@ -59,8 +59,9 @@ function drawTicks(ctx, canvas, series, samplingRate) {
   const w = canvas.width - M.left - M.right;
   const h = canvas.height - M.top - M.bottom;
   const dur = series.length / samplingRate;
-  const minY = Math.min(...series);
-  const maxY = Math.max(...series);
+  const extent = getSeriesExtent(series);
+  const minY = extent.min;
+  const maxY = extent.max;
   const yRange = maxY - minY;
   const yTickCount = getYTickCount(minY, maxY);
   const xTickCount = getXTickCount(canvas.width);
@@ -90,8 +91,10 @@ function drawTicks(ctx, canvas, series, samplingRate) {
 function drawSeries(ctx, canvas, series) {
   const w = canvas.width - M.left - M.right;
   const h = canvas.height - M.top - M.bottom;
-  const minY = Math.min(...series);
-  const maxY = Math.max(...series);
+  const extent = getSeriesExtent(series);
+  const minY = extent.min;
+  const maxY = extent.max;
+  const span = maxY - minY || 1;
 
   ctx.strokeStyle = "#0f172a";
   ctx.lineWidth = 1.8;
@@ -99,7 +102,7 @@ function drawSeries(ctx, canvas, series) {
 
   series.forEach((v, i) => {
     const x = M.left + (i / (series.length - 1)) * w;
-    const y = M.top + h - ((v - minY) / (maxY - minY)) * h;
+    const y = M.top + h - ((v - minY) / span) * h;
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
@@ -140,11 +143,29 @@ function drawEvents(ctx, canvas, events, nSamples, samplingRate) {
     ctx.stroke();
 
     ctx.fillText(
-      "E" + e.code,
+      eventDisplayLabel(e),
       x + 2,
       M.top + 12
     );
   });
+}
+
+function getSeriesExtent(series) {
+  if (!series || !series.length) return { min: 0, max: 0 };
+  let min = series[0];
+  let max = series[0];
+  for (let i = 1; i < series.length; i++) {
+    const value = series[i];
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  return { min, max };
+}
+
+function eventDisplayLabel(event) {
+  if (event && typeof event.label === "string" && event.label.trim()) return event.label.trim();
+  if (event && Number.isFinite(event.code)) return "E" + event.code;
+  return "E?";
 }
 
 function drawLabels(ctx, canvas) {

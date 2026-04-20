@@ -124,7 +124,7 @@ async function handleInput(evt) {
     inputTypeLabel = "files";
     const hdr = files.find(f => f.name.toLowerCase().endsWith(".hdr"));
     datasetLabel = hdr ? stem(hdr.name) : (files[0] ? stem(files[0].name) : "unknown-dataset");
-    loadFiles(files);
+    await loadFiles(files);
   }
 }
 
@@ -237,20 +237,24 @@ async function loadZip(zipFile) {
     return;
   }
 
-  const files = [];
-  for (const name in zip.files) {
-    const e = zip.files[name];
-    if (!e.dir) {
-      const blob = await e.async("blob");
-      files.push(new File([blob], name));
-    }
-  }
-  loadFiles(files);
+  const hdr = findZipEntryBySuffix(zip, ".hdr");
+  const wl1 = findZipEntryBySuffix(zip, ".wl1");
+  const wl2 = findZipEntryBySuffix(zip, ".wl2");
+  const evt = findZipEntryBySuffix(zip, ".evt");
+  const probeMat = findZipEntryByContainsAndSuffix(zip, "probeinfo", ".mat");
+
+  await loadNirxDatasetFromReaders({
+    hdr: hdr ? { name: hdr.name, readText: () => hdr.async("text") } : null,
+    wl1: wl1 ? { name: wl1.name, readText: () => wl1.async("text") } : null,
+    wl2: wl2 ? { name: wl2.name, readText: () => wl2.async("text") } : null,
+    evt: evt ? { name: evt.name, readText: () => evt.async("text") } : null,
+    probeMat: probeMat ? { name: probeMat.name, readArrayBuffer: () => probeMat.async("arraybuffer") } : null
+  });
 }
 
 /* ================= Loading NIRx data ================= */
 
-function loadFiles(files) {
+async function loadFiles(files) {
   resetAllState();
 
   const hdr = files.find(f => f.name.toLowerCase().endsWith(".hdr"));
@@ -273,22 +277,71 @@ function loadFiles(files) {
     return;
   }
 
-  Promise.all([
-    hdr.text(),
-    wl1.text(),
-    wl2.text(),
-    evt ? evt.text() : null,
-    probeMat ? probeMat.arrayBuffer() : null
-  ]).then(([hdrT, wl1T, wl2T, evtT, matBuf]) => {
+  await loadNirxDatasetFromReaders({
+    hdr: { name: hdr.name, readText: () => hdr.text() },
+    wl1: { name: wl1.name, readText: () => wl1.text() },
+    wl2: { name: wl2.name, readText: () => wl2.text() },
+    evt: evt ? { name: evt.name, readText: () => evt.text() } : null,
+    probeMat: probeMat ? { name: probeMat.name, readArrayBuffer: () => probeMat.arrayBuffer() } : null
+  });
+}
+
+function findZipEntryBySuffix(zip, suffix) {
+  const wanted = String(suffix || "").toLowerCase();
+  for (const name in zip.files) {
+    const entry = zip.files[name];
+    if (!entry.dir && name.toLowerCase().endsWith(wanted)) return entry;
+  }
+  return null;
+}
+
+function findZipEntryByContainsAndSuffix(zip, fragment, suffix) {
+  const wantedFragment = String(fragment || "").toLowerCase();
+  const wantedSuffix = String(suffix || "").toLowerCase();
+  for (const name in zip.files) {
+    const entry = zip.files[name];
+    const lower = name.toLowerCase();
+    if (!entry.dir && lower.includes(wantedFragment) && lower.endsWith(wantedSuffix)) return entry;
+  }
+  return null;
+}
+
+async function loadNirxDatasetFromReaders(parts) {
+  resetAllState();
+
+  const hdr = parts && parts.hdr ? parts.hdr : null;
+  const wl1 = parts && parts.wl1 ? parts.wl1 : null;
+  const wl2 = parts && parts.wl2 ? parts.wl2 : null;
+  const evt = parts && parts.evt ? parts.evt : null;
+  const probeMat = parts && parts.probeMat ? parts.probeMat : null;
+
+  sources.hdr = hdr ? hdr.name : null;
+  sources.wl1 = wl1 ? wl1.name : null;
+  sources.wl2 = wl2 ? wl2.name : null;
+  sources.evt = evt ? evt.name : null;
+  sources.probeMat = probeMat ? probeMat.name : null;
+
+  if (!hdr || !wl1 || !wl2) {
+    metaDiv.textContent = "Missing required files (.hdr, .wl1, .wl2)";
+    return;
+  }
+
+  try {
+    const hdrT = await hdr.readText();
     samplingRate = parseSamplingRate(hdrT);
     sources.samplingRateFrom = hdr.name;
 
+    const wl1T = await wl1.readText();
     data.wl1 = parseMatrix(wl1T);
+
+    const wl2T = await wl2.readText();
     data.wl2 = parseMatrix(wl2T);
 
+    const evtT = evt ? await evt.readText() : null;
     events = evtT ? parseEvents(evtT) : [];
     sources.eventsFrom = evt ? evt.name : "none";
 
+    const matBuf = probeMat ? await probeMat.readArrayBuffer() : null;
     if (matBuf) {
       channelLabels = extractChannelLabels(matBuf, data.wl1[0].length);
       channelLabelSource = "probeInfo.mat";
@@ -309,7 +362,10 @@ function loadFiles(files) {
 
     renderMeta();
     redraw();
-  });
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    metaDiv.textContent = "Failed to load dataset: " + message;
+  }
 }
 
 /* ================= Controls ================= */
@@ -875,8 +931,8 @@ function redraw() {
   const processed = trimStepEnabled ? applyExclusions(filtered, intervals) : filtered.slice();
   const trimmedEvents = trimStepEnabled
     ? adjustEvents(events, intervals)
-    : events.map(e => ({ time: e.sample / samplingRate, code: e.code }));
-  const rawEvents = events.map(e => ({ time: e.sample / samplingRate, code: e.code }));
+    : events.map(e => ({ time: e.sample / samplingRate, code: e.code, label: eventDisplayLabel(e) }));
+  const rawEvents = events.map(e => ({ time: e.sample / samplingRate, code: e.code, label: eventDisplayLabel(e) }));
   const rawDisplay = getDisplayWindow(raw, rawEvents, intervals, samplingRate, validated);
   const processedDisplay = getDisplayWindow(processed, trimmedEvents, null, samplingRate, validated);
 
@@ -941,7 +997,7 @@ function renderMeta() {
     events.forEach(e => {
       eventRows += "<tr>"
         + "<td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + (e.sample / samplingRate).toFixed(2) + "</td>"
-        + "<td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + e.code + "</td>"
+        + "<td class='border px-2 py-1' style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>" + escapeHtml(eventDisplayLabel(e)) + "</td>"
         + "</tr>";
     });
   }
@@ -1570,16 +1626,70 @@ function parseSamplingRate(t) {
 }
 
 function parseMatrix(t) {
-  return t.trim().split(/\r?\n/).map(l =>
-    l.trim().split(/\s+/).map(Number)
-  );
+  const rows = [];
+  let row = [];
+  let token = "";
+
+  const pushToken = () => {
+    if (!token) return;
+    const value = Number(token);
+    if (Number.isFinite(value)) row.push(value);
+    token = "";
+  };
+
+  const pushRow = () => {
+    pushToken();
+    if (row.length) {
+      rows.push(row);
+      row = [];
+    }
+  };
+
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (ch === "\n") {
+      pushRow();
+      continue;
+    }
+    if (ch === "\r" || ch === " " || ch === "\t") {
+      pushToken();
+      continue;
+    }
+    token += ch;
+  }
+
+  pushRow();
+  return rows;
 }
 
 function parseEvents(t) {
-  return t.trim().split(/\r?\n/).map(l => {
-    const p = l.trim().split(/\s+/).map(Number);
-    return { sample: p[0], code: p[1] };
-  });
+  return t.split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith("#"))
+    .map(line => {
+      const p = line.split(/\s+/).map(Number).filter(Number.isFinite);
+      if (p.length < 2) return null;
+      const sample = Math.round(p[0]);
+      const markerFields = p.slice(1);
+
+      if (markerFields.length === 1) {
+        const code = Math.round(markerFields[0]);
+        return { sample, code, label: "E" + code };
+      }
+
+      const active = [];
+      markerFields.forEach((value, idx) => {
+        if (value !== 0) active.push(idx + 1);
+      });
+      if (!active.length) return null;
+
+      return {
+        sample,
+        code: active[0],
+        label: "E" + active.join("+")
+      };
+    })
+    .filter(Boolean);
 }
 
 function parseIntervals(text) {
@@ -1600,7 +1710,7 @@ function applyExclusions(series, intervals) {
 
 function adjustEvents(eventsIn, intervals) {
   if (!eventsIn.length) return [];
-  if (!intervals.length) return eventsIn.map(e => ({ time: e.sample / samplingRate, code: e.code }));
+  if (!intervals.length) return eventsIn.map(e => ({ time: e.sample / samplingRate, code: e.code, label: eventDisplayLabel(e) }));
 
   const out = [];
   eventsIn.forEach(e => {
@@ -1613,9 +1723,15 @@ function adjustEvents(eventsIn, intervals) {
       if (intv.end < t) shift += (intv.end - intv.start);
     });
 
-    if (!excluded) out.push({ time: t - shift, code: e.code });
+    if (!excluded) out.push({ time: t - shift, code: e.code, label: eventDisplayLabel(e) });
   });
   return out;
+}
+
+function eventDisplayLabel(event) {
+  if (event && typeof event.label === "string" && event.label.trim()) return event.label.trim();
+  if (event && Number.isFinite(event.code)) return "E" + event.code;
+  return "E?";
 }
 
 function defaultChannelLabels() {
