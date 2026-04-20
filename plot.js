@@ -1,8 +1,9 @@
-function drawPlot(ctx, canvas, series, samplingRate, overlays, events, title, statsLine) {
+function drawPlot(ctx, canvas, series, samplingRate, overlays, events, title, statsLine, options = {}) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const timeOffsetSeconds = options && Number.isFinite(options.timeOffsetSeconds) ? options.timeOffsetSeconds : 0;
 
   drawGrid(ctx, canvas);
-  drawAxes(ctx, canvas, series, samplingRate);
+  drawAxes(ctx, canvas, series, samplingRate, timeOffsetSeconds);
   drawSeries(ctx, canvas, series);
 
   if (overlays && overlays.length) {
@@ -40,7 +41,7 @@ function drawGrid(ctx, canvas) {
   }
 }
 
-function drawAxes(ctx, canvas, series, samplingRate) {
+function drawAxes(ctx, canvas, series, samplingRate, timeOffsetSeconds) {
   const w = canvas.width - M.left - M.right;
   const h = canvas.height - M.top - M.bottom;
 
@@ -52,10 +53,10 @@ function drawAxes(ctx, canvas, series, samplingRate) {
   ctx.lineTo(M.left + w, M.top + h);
   ctx.stroke();
 
-  drawTicks(ctx, canvas, series, samplingRate);
+  drawTicks(ctx, canvas, series, samplingRate, timeOffsetSeconds);
 }
 
-function drawTicks(ctx, canvas, series, samplingRate) {
+function drawTicks(ctx, canvas, series, samplingRate, timeOffsetSeconds) {
   const w = canvas.width - M.left - M.right;
   const h = canvas.height - M.top - M.bottom;
   const dur = series.length / samplingRate;
@@ -72,7 +73,7 @@ function drawTicks(ctx, canvas, series, samplingRate) {
 
   for (let i = 0; i <= xTickCount; i++) {
     const x = M.left + (i / xTickCount) * w;
-    const tx = (dur * i / xTickCount).toFixed(1);
+    const tx = (timeOffsetSeconds + (dur * i / xTickCount)).toFixed(1);
     if (i === 0) ctx.textAlign = "left";
     else if (i === xTickCount) ctx.textAlign = "right";
     else ctx.textAlign = "center";

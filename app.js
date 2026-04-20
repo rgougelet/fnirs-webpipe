@@ -35,8 +35,11 @@ let events = [];
 let channelLabels = [];
 let channelLabelSource = "default";
 
-let currentWavelength = "wl2";
+let currentWavelength = "wl1";
 let currentChannel = 0;
+let viewWindowSecondsInput = null;
+let viewOffsetSlider = null;
+let viewOffsetSummaryEl = null;
 
 let exclusionTable = null;
 let lowCutEnabled = true;
@@ -191,7 +194,7 @@ function resetAllState() {
   channelLabels = [];
   channelLabelSource = "default";
 
-  currentWavelength = "wl2";
+  currentWavelength = "wl1";
   currentChannel = 0;
 
   lowCutEnabled = true;
@@ -331,26 +334,40 @@ async function loadNirxDatasetFromReaders(parts) {
     samplingRate = parseSamplingRate(hdrT);
     sources.samplingRateFrom = hdr.name;
 
+    const matBuf = probeMat ? await probeMat.readArrayBuffer() : null;
+    let channelCountHint = parseHdrChannelCountHint(hdrT);
+    if (matBuf) {
+      channelLabels = extractChannelLabels(matBuf, channelCountHint || undefined);
+      channelLabelSource = "probeInfo.mat";
+      sources.channelLabelsFrom = probeMat.name;
+      if (channelLabels.length) channelCountHint = channelLabels.length;
+    } else {
+      channelLabels = [];
+      channelLabelSource = "default (probeInfo.mat not found)";
+      sources.channelLabelsFrom = "default";
+    }
+
     const wl1T = await wl1.readText();
-    data.wl1 = parseMatrix(wl1T);
+    data.wl1 = parseMatrix(wl1T, channelCountHint);
 
     const wl2T = await wl2.readText();
-    data.wl2 = parseMatrix(wl2T);
+    data.wl2 = parseMatrix(wl2T, channelCountHint);
+
+    const actualChannelCount = inferMatrixChannelCount(data.wl1, data.wl2);
+    if (channelLabels.length) {
+      channelLabels = channelLabels.slice(0, actualChannelCount);
+      if (channelLabels.length !== actualChannelCount) {
+        channelLabels = buildDefaultChannelLabels(actualChannelCount);
+        channelLabelSource = "default (probeInfo channel count mismatch)";
+        sources.channelLabelsFrom = "default";
+      }
+    } else {
+      channelLabels = buildDefaultChannelLabels(actualChannelCount);
+    }
 
     const evtT = evt ? await evt.readText() : null;
     events = evtT ? parseEvents(evtT) : [];
     sources.eventsFrom = evt ? evt.name : "none";
-
-    const matBuf = probeMat ? await probeMat.readArrayBuffer() : null;
-    if (matBuf) {
-      channelLabels = extractChannelLabels(matBuf, data.wl1[0].length);
-      channelLabelSource = "probeInfo.mat";
-      sources.channelLabelsFrom = probeMat.name;
-    } else {
-      channelLabels = defaultChannelLabels();
-      channelLabelSource = "default (probeInfo.mat not found)";
-      sources.channelLabelsFrom = "default";
-    }
 
     buildControls();
     controls.classList.remove("hidden");
@@ -750,6 +767,46 @@ function buildControls() {
   viewRow.appendChild(plotModeSelect);
   viewCard.appendChild(viewRow);
 
+  const windowRow = document.createElement("div");
+  windowRow.className = "grid grid-cols-[auto_88px] gap-2 items-center";
+  const windowLbl = document.createElement("div");
+  windowLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
+  windowLbl.textContent = "Data window (s):";
+  viewWindowSecondsInput = document.createElement("input");
+  viewWindowSecondsInput.type = "text";
+  viewWindowSecondsInput.inputMode = "decimal";
+  viewWindowSecondsInput.value = "60";
+  viewWindowSecondsInput.className = "p-2 border rounded bg-white w-full text-sm";
+  viewWindowSecondsInput.title = "Visible time span in seconds. Larger than the record duration shows the full trace.";
+  viewWindowSecondsInput.oninput = () => {
+    updateViewNavigationUi(getReferenceDurationSeconds());
+    redraw();
+  };
+  windowRow.appendChild(windowLbl);
+  windowRow.appendChild(viewWindowSecondsInput);
+  viewCard.appendChild(windowRow);
+
+  const sliderRow = document.createElement("div");
+  sliderRow.className = "flex flex-col gap-1";
+  viewOffsetSlider = document.createElement("input");
+  viewOffsetSlider.type = "range";
+  viewOffsetSlider.min = "0";
+  viewOffsetSlider.max = "0";
+  viewOffsetSlider.step = "0.1";
+  viewOffsetSlider.value = "0";
+  viewOffsetSlider.disabled = true;
+  viewOffsetSlider.className = "w-full";
+  viewOffsetSlider.oninput = () => {
+    updateViewNavigationSummary(getReferenceDurationSeconds());
+    redraw();
+  };
+  viewOffsetSummaryEl = document.createElement("div");
+  viewOffsetSummaryEl.className = "text-xs text-slate-600";
+  viewOffsetSummaryEl.textContent = "Full record";
+  sliderRow.appendChild(viewOffsetSlider);
+  sliderRow.appendChild(viewOffsetSummaryEl);
+  viewCard.appendChild(sliderRow);
+
   fDiv.appendChild(lowRow);
   fDiv.appendChild(highRow);
   fDiv.appendChild(dcRow);
@@ -784,17 +841,17 @@ function buildControls() {
     accordionStack.appendChild(createAccordionSection("File Sources", fileSourcesContentEl, false));
     accordionStack.appendChild(createAccordionSection("Events", eventsContentEl, false));
     accordionStack.appendChild(createAccordionSection("Wavelength", wlDiv, true));
-    accordionStack.appendChild(createAccordionSection("Channel", chDiv, false));
+    accordionStack.appendChild(createAccordionSection("Channel", chDiv, true));
     accordionStack.appendChild(createAccordionSection("Pipeline", pipelineDiv, false));
     accordionStack.appendChild(createAccordionSection("Filter", fDiv, true));
     accordionStack.appendChild(createAccordionSection("Cut Intervals", exDiv, false));
     accordionStack.appendChild(createAccordionSection("Notes", notesDiv, false));
   }
+  controls.appendChild(accordionStack);
   rebuildRadioSelections();
   updateFilterToggleButtons();
   updatePipelineSummary();
-
-  controls.appendChild(accordionStack);
+  updateViewNavigationUi(getReferenceDurationSeconds());
 }
 
 function createAccordionSection(title, contentEl, openByDefault) {
@@ -864,7 +921,7 @@ function intensityToDeltaOd(series) {
 function resetProtocolUiOnly() {
   if (!data.wl1) return;
 
-  currentWavelength = "wl2";
+  currentWavelength = "wl1";
   currentChannel = 0;
 
   if (branchTagInput) branchTagInput.value = "";
@@ -905,6 +962,11 @@ function resetProtocolUiOnly() {
 function redraw() {
   if (!data.wl1) return;
 
+  if (currentWavelength !== "wl1" && currentWavelength !== "wl2") currentWavelength = "wl1";
+  const maxChannelIndex = Math.max(0, inferMatrixChannelCount(data[currentWavelength]) - 1);
+  if (!Number.isFinite(currentChannel) || currentChannel < 0) currentChannel = 0;
+  if (currentChannel > maxChannelIndex) currentChannel = maxChannelIndex;
+
   const rawIntensity = data[currentWavelength].map(r => r[currentChannel]);
   const signalDomain = getSignalDomain();
   const raw = signalDomain === "delta_od" ? intensityToDeltaOd(rawIntensity) : rawIntensity.slice();
@@ -935,33 +997,41 @@ function redraw() {
   const rawEvents = events.map(e => ({ time: e.sample / samplingRate, code: e.code, label: eventDisplayLabel(e) }));
   const rawDisplay = getDisplayWindow(raw, rawEvents, intervals, samplingRate, validated);
   const processedDisplay = getDisplayWindow(processed, trimmedEvents, null, samplingRate, validated);
+  updateViewNavigationUi(rawDisplay.series.length / samplingRate);
+  const requestedWindow = getRequestedPlotWindowSeconds(rawDisplay.series.length / samplingRate);
+  const rawWindowed = sliceDisplayByTimeWindow(rawDisplay, samplingRate, getWindowStartSeconds(rawDisplay.series.length / samplingRate, requestedWindow), requestedWindow);
+  const processedWindowed = sliceDisplayByTimeWindow(processedDisplay, samplingRate, rawWindowed.startSeconds, requestedWindow);
 
   const wlLabel = currentWavelength === "wl1" ? "760 nm" : "850 nm";
   const chLabel = channelLabels[currentChannel];
   const domainLabel = signalDomain === "delta_od" ? "Delta OD" : "Intensity";
-  if (rawPlotHeaderEl) rawPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Input (" + domainLabel + ") | " + formatStats(computeStats(rawDisplay.series));
-  if (trimPlotHeaderEl) trimPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Output (" + filterLabel + (trimStepEnabled ? ", trim on" : ", trim off") + ") | " + formatStats(computeStats(processedDisplay.series));
+  const rawRangeLabel = formatWindowRangeLabel(rawWindowed.startSeconds, rawWindowed.series.length / samplingRate);
+  const processedRangeLabel = formatWindowRangeLabel(processedWindowed.startSeconds, processedWindowed.series.length / samplingRate);
+  if (rawPlotHeaderEl) rawPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Input (" + domainLabel + ", " + rawRangeLabel + ") | " + formatStats(computeStats(rawWindowed.series));
+  if (trimPlotHeaderEl) trimPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Output (" + filterLabel + (trimStepEnabled ? ", trim on" : ", trim off") + ", " + processedRangeLabel + ") | " + formatStats(computeStats(processedWindowed.series));
 
   drawPlot(
     ctxRaw,
     canvasRaw,
-    rawDisplay.series,
+    rawWindowed.series,
     samplingRate,
-    rawDisplay.intervals,
-    rawDisplay.events,
+    rawWindowed.intervals,
+    rawWindowed.events,
     wlLabel + " " + chLabel + " Input (" + domainLabel + ")",
-    formatStats(computeStats(rawDisplay.series))
+    formatStats(computeStats(rawWindowed.series)),
+    { timeOffsetSeconds: rawWindowed.startSeconds }
   );
 
   drawPlot(
     ctxTrim,
     canvasTrim,
-    processedDisplay.series,
+    processedWindowed.series,
     samplingRate,
-    processedDisplay.intervals,
-    processedDisplay.events,
+    processedWindowed.intervals,
+    processedWindowed.events,
     wlLabel + " " + chLabel + " Output (" + filterLabel + ")",
-    formatStats(computeStats(processedDisplay.series))
+    formatStats(computeStats(processedWindowed.series)),
+    { timeOffsetSeconds: processedWindowed.startSeconds }
   );
 }
 
@@ -1607,16 +1677,17 @@ function rmsNormalize(ref, x, edgeSamples) {
 }
 
 function extractChannelLabels(buf, expectedChannels) {
-  if (typeof mat4js === "undefined") return defaultChannelLabels();
+  if (typeof mat4js === "undefined") return [];
 
   try {
     const parsed = mat4js.read(buf);
     const probes = parsed.data.probeInfo.probes;
-    if (!probes || !probes.index_c) return defaultChannelLabels();
+    if (!probes || !probes.index_c) return [];
     const labels = probes.index_c.map(pair => "S" + pair[0] + " D" + pair[1]);
-    return labels.length === expectedChannels ? labels : defaultChannelLabels();
+    if (!expectedChannels || expectedChannels <= 0) return labels;
+    return labels.length >= expectedChannels ? labels.slice(0, expectedChannels) : [];
   } catch {
-    return defaultChannelLabels();
+    return [];
   }
 }
 
@@ -1625,7 +1696,7 @@ function parseSamplingRate(t) {
   return m ? parseFloat(m[1]) : null;
 }
 
-function parseMatrix(t) {
+function parseMatrix(t, expectedColumns) {
   const rows = [];
   let row = [];
   let token = "";
@@ -1640,7 +1711,14 @@ function parseMatrix(t) {
   const pushRow = () => {
     pushToken();
     if (row.length) {
-      rows.push(row);
+      if (Number.isFinite(expectedColumns) && expectedColumns > 0) {
+        if (row.length < expectedColumns) {
+          throw new Error("Data row has " + row.length + " columns; expected at least " + expectedColumns);
+        }
+        rows.push(row.slice(0, expectedColumns));
+      } else {
+        rows.push(row);
+      }
       row = [];
     }
   };
@@ -1660,6 +1738,28 @@ function parseMatrix(t) {
 
   pushRow();
   return rows;
+}
+
+function parseHdrChannelCountHint(text) {
+  if (!text) return null;
+  const gainMatch = text.match(/Gains="#([\s\S]*?)#"/i);
+  if (!gainMatch) return null;
+  const count = gainMatch[1]
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line)
+    .reduce((sum, line) => sum + line.split(/\s+/).filter(token => /^-?\d+(\.\d+)?$/.test(token)).length, 0);
+  return count > 0 ? count : null;
+}
+
+function inferMatrixChannelCount() {
+  for (let i = 0; i < arguments.length; i++) {
+    const matrix = arguments[i];
+    if (Array.isArray(matrix) && matrix.length && Array.isArray(matrix[0]) && matrix[0].length) {
+      return matrix[0].length;
+    }
+  }
+  return 0;
 }
 
 function parseEvents(t) {
@@ -1735,13 +1835,18 @@ function eventDisplayLabel(event) {
 }
 
 function defaultChannelLabels() {
-  return data.wl1[0].map((_, i) => "Channel " + (i + 1));
+  return buildDefaultChannelLabels(data.wl1[0].length);
+}
+
+function buildDefaultChannelLabels(count) {
+  const n = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  return Array.from({ length: n }, (_, i) => "Channel " + (i + 1));
 }
 
 function getDisplayWindow(series, eventsIn, intervalsIn, fs, filterSpec) {
   const out = {
     series: Array.isArray(series) ? series.slice() : [],
-    events: Array.isArray(eventsIn) ? eventsIn.map(e => ({ time: e.time, code: e.code })) : [],
+    events: Array.isArray(eventsIn) ? eventsIn.map(e => ({ time: e.time, code: e.code, label: eventDisplayLabel(e) })) : [],
     intervals: Array.isArray(intervalsIn) ? intervalsIn.map(intv => ({ start: intv.start, end: intv.end })) : intervalsIn
   };
 
@@ -1755,7 +1860,7 @@ function getDisplayWindow(series, eventsIn, intervalsIn, fs, filterSpec) {
 
   out.events = out.events
     .filter(e => Number.isFinite(e.time) && e.time >= cropSeconds && e.time <= keptEnd)
-    .map(e => ({ time: e.time - cropSeconds, code: e.code }));
+    .map(e => ({ time: e.time - cropSeconds, code: e.code, label: eventDisplayLabel(e) }));
 
   if (Array.isArray(out.intervals)) {
     out.intervals = out.intervals
@@ -1775,6 +1880,106 @@ function getEdgeDisplayCropSamples(length, fs, filterSpec) {
   if (!Number.isFinite(fs) || fs <= 0 || seconds === null || seconds <= 0) return 0;
   if (!Number.isFinite(length) || length < 3) return 0;
   return Math.max(0, Math.min(Math.round(seconds * fs), Math.floor((length - 1) / 2)));
+}
+
+function getReferenceDurationSeconds() {
+  if (!data.wl1 || !samplingRate) return null;
+  const requestedSpec = getRequestedFilterSpec();
+  const validated = validateFilterSpec(samplingRate, requestedSpec);
+  const cropSamples = getEdgeDisplayCropSamples(data.wl1.length, samplingRate, validated);
+  const croppedLength = Math.max(0, data.wl1.length - cropSamples * 2);
+  return croppedLength / samplingRate;
+}
+
+function getRequestedPlotWindowSeconds(durationSeconds) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return 0;
+  const requested = numberOrNull(viewWindowSecondsInput ? viewWindowSecondsInput.value : null);
+  if (requested === null || requested <= 0) return durationSeconds;
+  return Math.min(requested, durationSeconds);
+}
+
+function getWindowStartSeconds(durationSeconds, windowSeconds) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return 0;
+  const span = Number.isFinite(windowSeconds) && windowSeconds > 0 ? Math.min(windowSeconds, durationSeconds) : durationSeconds;
+  const maxStart = Math.max(0, durationSeconds - span);
+  const sliderValue = numberOrNull(viewOffsetSlider ? viewOffsetSlider.value : null);
+  const start = sliderValue === null ? 0 : sliderValue;
+  return Math.max(0, Math.min(start, maxStart));
+}
+
+function updateViewNavigationUi(durationSeconds) {
+  if (!viewOffsetSlider || !viewOffsetSummaryEl) return;
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    viewOffsetSlider.disabled = true;
+    viewOffsetSlider.min = "0";
+    viewOffsetSlider.max = "0";
+    viewOffsetSlider.value = "0";
+    updateViewNavigationSummary(durationSeconds);
+    return;
+  }
+
+  const windowSeconds = getRequestedPlotWindowSeconds(durationSeconds);
+  const maxStart = Math.max(0, durationSeconds - windowSeconds);
+  const start = getWindowStartSeconds(durationSeconds, windowSeconds);
+  viewOffsetSlider.disabled = maxStart <= 0;
+  viewOffsetSlider.min = "0";
+  viewOffsetSlider.max = maxStart.toFixed(3);
+  viewOffsetSlider.step = durationSeconds >= 120 ? "0.5" : "0.1";
+  viewOffsetSlider.value = start.toFixed(3);
+  updateViewNavigationSummary(durationSeconds);
+}
+
+function updateViewNavigationSummary(durationSeconds) {
+  if (!viewOffsetSummaryEl) return;
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    viewOffsetSummaryEl.textContent = "No data loaded";
+    return;
+  }
+  const windowSeconds = getRequestedPlotWindowSeconds(durationSeconds);
+  const start = getWindowStartSeconds(durationSeconds, windowSeconds);
+  const end = Math.min(durationSeconds, start + windowSeconds);
+  if (windowSeconds >= durationSeconds - 1e-6) {
+    viewOffsetSummaryEl.textContent = "Full record: 0.0-" + durationSeconds.toFixed(1) + " s";
+    return;
+  }
+  viewOffsetSummaryEl.textContent = "Showing " + start.toFixed(1) + "-" + end.toFixed(1) + " s of " + durationSeconds.toFixed(1) + " s";
+}
+
+function sliceDisplayByTimeWindow(display, fs, requestedStartSeconds, requestedWindowSeconds) {
+  const safe = {
+    series: Array.isArray(display && display.series) ? display.series.slice() : [],
+    events: Array.isArray(display && display.events) ? display.events.map(e => ({ time: e.time, code: e.code, label: eventDisplayLabel(e) })) : [],
+    intervals: Array.isArray(display && display.intervals) ? display.intervals.map(intv => ({ start: intv.start, end: intv.end })) : []
+  };
+  if (!Number.isFinite(fs) || fs <= 0 || !safe.series.length) {
+    safe.startSeconds = 0;
+    return safe;
+  }
+  const durationSeconds = safe.series.length / fs;
+  const span = Number.isFinite(requestedWindowSeconds) && requestedWindowSeconds > 0 ? Math.min(requestedWindowSeconds, durationSeconds) : durationSeconds;
+  const startSeconds = Math.max(0, Math.min(Number.isFinite(requestedStartSeconds) ? requestedStartSeconds : 0, Math.max(0, durationSeconds - span)));
+  const endSeconds = Math.min(durationSeconds, startSeconds + span);
+  const startSample = Math.max(0, Math.floor(startSeconds * fs));
+  const endSample = Math.min(safe.series.length, Math.max(startSample + 1, Math.ceil(endSeconds * fs)));
+
+  safe.series = safe.series.slice(startSample, endSample);
+  safe.events = safe.events
+    .filter(e => Number.isFinite(e.time) && e.time >= startSeconds && e.time <= endSeconds)
+    .map(e => ({ time: e.time - startSeconds, code: e.code, label: eventDisplayLabel(e) }));
+  safe.intervals = safe.intervals
+    .map(intv => ({
+      start: Math.max(intv.start, startSeconds) - startSeconds,
+      end: Math.min(intv.end, endSeconds) - startSeconds
+    }))
+    .filter(intv => Number.isFinite(intv.start) && Number.isFinite(intv.end) && intv.end > intv.start);
+  safe.startSeconds = startSeconds;
+  return safe;
+}
+
+function formatWindowRangeLabel(startSeconds, spanSeconds) {
+  const start = Number.isFinite(startSeconds) ? startSeconds : 0;
+  const span = Number.isFinite(spanSeconds) ? spanSeconds : 0;
+  return start.toFixed(1) + "-" + (start + span).toFixed(1) + " s";
 }
 
 function rebuildRadioSelections() {

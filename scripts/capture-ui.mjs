@@ -13,6 +13,7 @@ const outDir = path.resolve(process.cwd(), getArg("out", "screenshots"));
 const rootDir = path.resolve(process.cwd());
 const zipArg = getArg("zip", null);
 const nirxDirArg = getArg("nirx-dir", null);
+const expandArg = getArg("expand", "");
 
 await mkdir(outDir, { recursive: true });
 
@@ -65,6 +66,10 @@ async function resolveZipPath() {
 }
 
 const zipPath = await resolveZipPath();
+const expandSections = expandArg
+  .split(",")
+  .map(s => s.trim().toLowerCase())
+  .filter(Boolean);
 if (zipPath) {
   console.log(`Using ZIP: ${zipPath}`);
 } else {
@@ -90,6 +95,18 @@ try {
       await page.setInputFiles("#input", zipPath);
       await page.waitForSelector("#controls:not(.hidden)", { timeout: 45000 });
       await page.waitForTimeout(1200);
+      if (expandSections.length) {
+        await page.evaluate((titles) => {
+          const wanted = new Set(titles);
+          const details = Array.from(document.querySelectorAll("#controls details"));
+          details.forEach(detail => {
+            const summary = detail.querySelector("summary");
+            const title = summary ? summary.textContent.trim().toLowerCase() : "";
+            if (wanted.has(title)) detail.open = true;
+          });
+        }, expandSections);
+        await page.waitForTimeout(250);
+      }
     }
 
     const fileTs = path.join(outDir, `ui-${theme}-${t.name}-${ts}.png`);
