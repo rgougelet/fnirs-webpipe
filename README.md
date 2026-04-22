@@ -73,6 +73,23 @@ Useful variants:
 If the Codex TUI was exited with `/exit`, restart with `npm run codex`; it uses
 `codex resume --last`, so you should not need to copy the conversation ID.
 
+## Git helper workflow
+Use these fixed-purpose scripts to reduce repeated approval prompts while still
+keeping Git operations explicit:
+
+```powershell
+npm run git:status
+npm run git:save -- "Commit message" -All
+npm run git:push
+npm run git:delete-branch -- branch-name -Remote
+```
+
+- `git:status` prints `git status --short --branch`.
+- `git:save` commits staged changes; pass `-All` to stage all current changes.
+- `git:push` pushes `main` to `origin` and refuses to run on other branches.
+- `git:delete-branch` deletes a local branch and, with `-Remote`, deletes the
+  matching branch from `origin`. It refuses to delete `main`.
+
 ## Status
 Active development.
 
