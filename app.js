@@ -1,7 +1,7 @@
 // app.js
 
-const APP_VERSION = "0.2";
-const APP_LAST_UPDATED = "2026-03-06";
+const APP_VERSION = "0.2.1";
+const APP_LAST_UPDATED = "2026-04-22";
 const PROTOCOL_SCHEMA_VERSION = 1;
 
 const input = document.getElementById("input");
@@ -9,6 +9,7 @@ const metaDiv = document.getElementById("meta");
 const controls = document.getElementById("controls");
 const protocolHost = document.getElementById("protocolHost");
 const plotGrid = document.getElementById("plotGrid");
+const appVersionEl = document.getElementById("appVersion");
 const appLastUpdatedEl = document.getElementById("appLastUpdated");
 
 const canvasRaw = document.getElementById("plot");
@@ -109,6 +110,7 @@ renderAppLastUpdated();
 initUrlProtocolListener();
 
 function renderAppLastUpdated() {
+  if (appVersionEl) appVersionEl.textContent = APP_VERSION;
   if (!appLastUpdatedEl) return;
   appLastUpdatedEl.textContent = "Last updated: " + APP_LAST_UPDATED;
 }

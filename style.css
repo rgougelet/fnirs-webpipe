@@ -254,11 +254,16 @@ body.theme-dark {
 }
 
 body.theme-dark #topRow,
+body.theme-dark #versionBadge,
 body.theme-dark #controls,
 body.theme-dark #leftPanel {
   background: #111827 !important;
   border-color: #334155 !important;
   color: #e2e8f0 !important;
+}
+
+body.theme-dark #versionBadge .text-slate-900 {
+  color: #f8fafc !important;
 }
 
 body.theme-dark #meta {
