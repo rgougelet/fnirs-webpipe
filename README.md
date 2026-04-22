@@ -79,12 +79,15 @@ keeping Git operations explicit:
 
 ```powershell
 npm run git:status
+npm run git:add -- README.md package.json
+npm run git:add -- -All
 npm run git:save -- "Commit message" -All
 npm run git:push
 npm run git:delete-branch -- branch-name -Remote
 ```
 
 - `git:status` prints `git status --short --branch`.
+- `git:add` stages explicit paths, or all changes with `-All`.
 - `git:save` commits staged changes; pass `-All` to stage all current changes.
 - `git:push` pushes `main` to `origin` and refuses to run on other branches.
 - `git:delete-branch` deletes a local branch and, with `-Remote`, deletes the

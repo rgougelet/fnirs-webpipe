@@ -7,6 +7,7 @@
     "codex": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/codex-session.ps1",
     "codex:new": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/codex-session.ps1 -New",
     "codex:pick": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/codex-session.ps1 -Picker",
+    "git:add": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/git-add.ps1",
     "git:delete-branch": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/git-delete-branch.ps1",
     "git:push": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/git-push-main.ps1",
     "git:save": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/git-save.ps1",
