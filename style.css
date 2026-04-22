@@ -222,17 +222,20 @@ body {
 
 #plotGrid {
   grid-area: plot;
+  --plot-min-width: 1200px;
   min-height: 0;
   height: 100%;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   align-self: stretch;
   padding: 8px 8px 10px 8px;
   border: 1px solid #cbd5e1;
   background: #f8fafc !important;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(var(--plot-min-width), 1fr);
   grid-template-rows: 1fr 1fr;
   gap: 6px;
   border-right: 8px solid #cbd5e1;
+  scrollbar-gutter: stable;
 }
 
 #plotGrid canvas {
