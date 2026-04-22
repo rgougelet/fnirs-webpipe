@@ -1,22 +1,19 @@
 param(
   [switch]$New,
   [switch]$Picker,
-  [switch]$NoTranscript,
   [string]$Prompt
 )
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$transcriptDir = Join-Path $repoRoot "chat_histories"
+$transcriptDir = Join-Path $repoRoot "agents\chat-history"
 
-if (-not $NoTranscript) {
-  New-Item -ItemType Directory -Force -Path $transcriptDir | Out-Null
-  $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-  $transcriptPath = Join-Path $transcriptDir "codex-$stamp.txt"
-  Start-Transcript -Path $transcriptPath -Append | Out-Null
-  Write-Host "Transcript: $transcriptPath"
-}
+New-Item -ItemType Directory -Force -Path $transcriptDir | Out-Null
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$transcriptPath = Join-Path $transcriptDir "codex-$stamp.txt"
+Start-Transcript -Path $transcriptPath -Append | Out-Null
+Write-Host "Transcript: $transcriptPath"
 
 try {
   Set-Location $repoRoot
@@ -49,7 +46,5 @@ try {
 
   exit $exitCode
 } finally {
-  if (-not $NoTranscript) {
-    Stop-Transcript | Out-Null
-  }
+  Stop-Transcript | Out-Null
 }
