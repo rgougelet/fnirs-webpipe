@@ -220,14 +220,22 @@ body {
   border: none !important;
 }
 
-#plotGrid {
+#plotArea {
   grid-area: plot;
-  --plot-min-width: 1200px;
   min-height: 0;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: stretch;
+}
+
+#plotGrid {
+  --plot-min-width: 1200px;
+  min-height: 0;
+  flex: 1 1 auto;
   overflow-x: auto;
   overflow-y: hidden;
-  align-self: stretch;
   padding: 8px 8px 10px 8px;
   border: 1px solid #cbd5e1;
   background: #f8fafc !important;
@@ -246,6 +254,30 @@ body {
   height: auto;
   max-height: calc((100vh - 255px) / 2);
   object-fit: contain;
+}
+
+.plot-scroller {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+}
+
+.plot-time-slider {
+  width: 100%;
+}
+
+.plot-scroll-summary {
+  min-width: 260px;
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-align: right;
+  white-space: nowrap;
 }
 
 body.theme-dark {
@@ -344,6 +376,12 @@ body.theme-dark .filter-toggle-btn.inactive {
 
 body.theme-dark .plot-header {
   color: #e2e8f0;
+}
+
+body.theme-dark .plot-scroller {
+  background: #111827;
+  border-color: #334155;
+  color: #cbd5e1;
 }
 
 body.theme-dark canvas {

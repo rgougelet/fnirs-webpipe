@@ -1,7 +1,7 @@
 // app.js
 
-const APP_VERSION = "0.2.2";
-const APP_LAST_UPDATED = "2026-04-22 11:31 EDT";
+const APP_VERSION = "0.2.3";
+const APP_LAST_UPDATED = "2026-04-22 12:30 EDT";
 const PROTOCOL_SCHEMA_VERSION = 1;
 
 const input = document.getElementById("input");
@@ -9,6 +9,7 @@ const metaDiv = document.getElementById("meta");
 const controls = document.getElementById("controls");
 const protocolHost = document.getElementById("protocolHost");
 const plotGrid = document.getElementById("plotGrid");
+const plotScrollerHost = document.getElementById("plotScrollerHost");
 const appVersionEl = document.getElementById("appVersion");
 const appLastUpdatedEl = document.getElementById("appLastUpdated");
 
@@ -26,7 +27,7 @@ canvasTrim.height = PLOT_HEIGHT;
 canvasTrim.classList.add("w-full");
 const ctxTrim = canvasTrim.getContext("2d");
 
-const M = { left: 54, right: 18, top: 10, bottom: 36 };
+const M = { left: 54, right: 18, top: 10, bottom: 56 };
 let rawPlotHeaderEl = null;
 let trimPlotHeaderEl = null;
 
@@ -96,9 +97,11 @@ const THEME_STORAGE_KEY = "fnirs-webpipe-theme";
 const PLOT_MODE_STORAGE_KEY = "fnirs-webpipe-plot-mode";
 const DEFAULT_PASSBAND_RIPPLE_DB = 0.1;
 const DEFAULT_STOPBAND_ATTENUATION_DB = 6.0;
+const MIN_EDGE_PADDING_SECONDS = 10.0;
 let currentPlotMode = "both";
 let rawPanelEl = null;
 let trimPanelEl = null;
+let plotScrollerEl = null;
 
 initTheme();
 initPlotMode();
@@ -711,23 +714,23 @@ function buildControls() {
   padRow.className = "grid grid-cols-[auto_auto_72px] gap-2 items-center";
   const padLbl = document.createElement("div");
   padLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
-  padLbl.textContent = "Edge pad:";
+  padLbl.textContent = "Zero pad:";
   edgePaddingCheckbox = document.createElement("input");
   edgePaddingCheckbox.type = "checkbox";
   edgePaddingCheckbox.className = "h-4 w-4 justify-self-start";
-  edgePaddingCheckbox.checked = false;
+  edgePaddingCheckbox.checked = true;
   edgePaddingCheckbox.onchange = () => {
     redraw();
     renderMeta();
   };
-  edgePaddingCheckbox.title = "Reflect-pad before filtering, then crop the padded region afterward.";
+  edgePaddingCheckbox.title = "Zero-pad before filtering. Uses at least 10 seconds on each side, adjusted by sampling rate.";
   edgePaddingSecondsInput = document.createElement("input");
   edgePaddingSecondsInput.type = "text";
   edgePaddingSecondsInput.inputMode = "decimal";
-  edgePaddingSecondsInput.placeholder = "1.0";
-  edgePaddingSecondsInput.value = "1.0";
+  edgePaddingSecondsInput.placeholder = String(MIN_EDGE_PADDING_SECONDS);
+  edgePaddingSecondsInput.value = String(MIN_EDGE_PADDING_SECONDS);
   edgePaddingSecondsInput.className = "p-2 border rounded bg-white w-full";
-  edgePaddingSecondsInput.title = "Padding duration in seconds on each side when edge padding is enabled.";
+  edgePaddingSecondsInput.title = "Zero-padding duration in seconds on each side. Values below 10 seconds are raised to 10.";
   edgePaddingSecondsInput.oninput = () => {
     redraw();
     renderMeta();
@@ -787,27 +790,6 @@ function buildControls() {
   windowRow.appendChild(windowLbl);
   windowRow.appendChild(viewWindowSecondsInput);
   viewCard.appendChild(windowRow);
-
-  const sliderRow = document.createElement("div");
-  sliderRow.className = "flex flex-col gap-1";
-  viewOffsetSlider = document.createElement("input");
-  viewOffsetSlider.type = "range";
-  viewOffsetSlider.min = "0";
-  viewOffsetSlider.max = "0";
-  viewOffsetSlider.step = "0.1";
-  viewOffsetSlider.value = "0";
-  viewOffsetSlider.disabled = true;
-  viewOffsetSlider.className = "w-full";
-  viewOffsetSlider.oninput = () => {
-    updateViewNavigationSummary(getReferenceDurationSeconds());
-    redraw();
-  };
-  viewOffsetSummaryEl = document.createElement("div");
-  viewOffsetSummaryEl.className = "text-xs text-slate-600";
-  viewOffsetSummaryEl.textContent = "Full record";
-  sliderRow.appendChild(viewOffsetSlider);
-  sliderRow.appendChild(viewOffsetSummaryEl);
-  viewCard.appendChild(sliderRow);
 
   fDiv.appendChild(lowRow);
   fDiv.appendChild(highRow);
@@ -940,8 +922,8 @@ function resetProtocolUiOnly() {
   if (highCutSixDbInput) highCutSixDbInput.value = "12.5";
   if (filterEngineSelect) filterEngineSelect.value = "rjg_sos";
   if (dcRestoreCheckbox) dcRestoreCheckbox.checked = true;
-  if (edgePaddingCheckbox) edgePaddingCheckbox.checked = false;
-  if (edgePaddingSecondsInput) edgePaddingSecondsInput.value = "1.0";
+  if (edgePaddingCheckbox) edgePaddingCheckbox.checked = true;
+  if (edgePaddingSecondsInput) edgePaddingSecondsInput.value = String(MIN_EDGE_PADDING_SECONDS);
   if (signalDomainSelect) signalDomainSelect.value = "intensity";
   filterStepEnabled = true;
   trimStepEnabled = true;
@@ -1241,7 +1223,7 @@ function buildProtocolSummary(protocol) {
       filterPart = "filter=on";
     }
     if (f.dcRestore) filterPart += " dc";
-    if (padEnabled) filterPart += " pad=reflect:" + formatHz(padSeconds) + "s";
+    if (padEnabled) filterPart += " pad=zero:" + formatHz(padSeconds) + "s";
     if (f.amplitudePreservation === "rms_normalize_to_pre_filter") filterPart += " amp=rms";
   }
 
@@ -1352,7 +1334,7 @@ function applyProtocol(protocol) {
     }
     if (dcRestoreCheckbox) dcRestoreCheckbox.checked = !!f.dcRestore;
     if (edgePaddingCheckbox) edgePaddingCheckbox.checked = padEnabled;
-    if (edgePaddingSecondsInput) edgePaddingSecondsInput.value = String(padSeconds === null ? 1.0 : padSeconds);
+    if (edgePaddingSecondsInput) edgePaddingSecondsInput.value = String(padSeconds === null ? MIN_EDGE_PADDING_SECONDS : Math.max(MIN_EDGE_PADDING_SECONDS, padSeconds));
     amplitudePreservationMode = "none";
   } else {
     filterStepEnabled = true;
@@ -1364,8 +1346,8 @@ function applyProtocol(protocol) {
     if (highCutSixDbInput) highCutSixDbInput.value = "12.5";
     if (filterEngineSelect) filterEngineSelect.value = "rjg_sos";
     if (dcRestoreCheckbox) dcRestoreCheckbox.checked = true;
-    if (edgePaddingCheckbox) edgePaddingCheckbox.checked = false;
-    if (edgePaddingSecondsInput) edgePaddingSecondsInput.value = "1.0";
+    if (edgePaddingCheckbox) edgePaddingCheckbox.checked = true;
+    if (edgePaddingSecondsInput) edgePaddingSecondsInput.value = String(MIN_EDGE_PADDING_SECONDS);
     amplitudePreservationMode = "none";
   }
   if (filterStepCheckbox) filterStepCheckbox.checked = filterStepEnabled;
@@ -1478,9 +1460,9 @@ function normalizeProtocol(raw) {
         highHz: null,
         lowSixDbHz: null,
         highSixDbHz: null,
-        edgePaddingEnabled: false,
-        edgePaddingMode: "reflect",
-        edgePaddingSeconds: 1.0,
+        edgePaddingEnabled: true,
+        edgePaddingMode: "zero",
+        edgePaddingSeconds: MIN_EDGE_PADDING_SECONDS,
         passbandRippleDb: DEFAULT_PASSBAND_RIPPLE_DB,
         stopbandAttenuationDb: DEFAULT_STOPBAND_ATTENUATION_DB,
         implementation: "rjg_sos",
@@ -1518,8 +1500,8 @@ function normalizeProtocol(raw) {
     f.lowSixDbHz = numberOrNull(f.lowSixDbHz);
     f.highSixDbHz = numberOrNull(f.highSixDbHz);
     f.edgePaddingEnabled = !!f.edgePaddingEnabled;
-    f.edgePaddingMode = "reflect";
-    f.edgePaddingSeconds = numberOrNull(f.edgePaddingSeconds) === null ? 1.0 : Number(f.edgePaddingSeconds);
+    f.edgePaddingMode = "zero";
+    f.edgePaddingSeconds = numberOrNull(f.edgePaddingSeconds) === null ? MIN_EDGE_PADDING_SECONDS : Math.max(MIN_EDGE_PADDING_SECONDS, Number(f.edgePaddingSeconds));
     if (f.lowHz !== null && f.lowSixDbHz === null) {
       f.lowSixDbHz = deriveDefaultHighpassSixDbHz(f.lowHz);
     }
@@ -1611,7 +1593,7 @@ function describeFilterSpec(spec) {
   } else if (lpPass !== null) {
     label = "LP [" + formatHz(lpPass) + " " + formatHz(lpSix) + "] Hz";
   }
-  if (padEnabled) label += " + pad reflect " + formatHz(padSeconds) + " s";
+  if (padEnabled) label += " + pad zero " + formatHz(padSeconds) + " s";
   return label;
 }
 
@@ -2021,11 +2003,42 @@ function initPlotLayout() {
 
   rawPanelEl = rawPanel;
   trimPanelEl = trimPanel;
+  plotScrollerEl = createPlotScroller();
 
   plotGrid.innerHTML = "";
   plotGrid.appendChild(rawPanel);
   plotGrid.appendChild(trimPanel);
+  if (plotScrollerHost) {
+    plotScrollerHost.textContent = "";
+    plotScrollerHost.appendChild(plotScrollerEl);
+  }
   applyPlotMode();
+}
+
+function createPlotScroller() {
+  const scroller = document.createElement("div");
+  scroller.className = "plot-scroller";
+
+  viewOffsetSlider = document.createElement("input");
+  viewOffsetSlider.type = "range";
+  viewOffsetSlider.min = "0";
+  viewOffsetSlider.max = "0";
+  viewOffsetSlider.step = "0.1";
+  viewOffsetSlider.value = "0";
+  viewOffsetSlider.disabled = true;
+  viewOffsetSlider.className = "plot-time-slider";
+  viewOffsetSlider.oninput = () => {
+    updateViewNavigationSummary(getReferenceDurationSeconds());
+    redraw();
+  };
+
+  viewOffsetSummaryEl = document.createElement("div");
+  viewOffsetSummaryEl.className = "plot-scroll-summary";
+  viewOffsetSummaryEl.textContent = "Full record";
+
+  scroller.appendChild(viewOffsetSlider);
+  scroller.appendChild(viewOffsetSummaryEl);
+  return scroller;
 }
 
 function computeStats(series) {
@@ -2059,7 +2072,7 @@ function getRequestedFilterSpec() {
     lowpassPassHz: filterStepEnabled && highCutEnabled ? lpPass : null,
     lowpassSixDbHz: filterStepEnabled && highCutEnabled ? lpSix : null,
     edgePaddingEnabled: !!(edgePaddingCheckbox && edgePaddingCheckbox.checked),
-    edgePaddingMode: "reflect",
+    edgePaddingMode: "zero",
     edgePaddingSeconds: numberOrNull(edgePaddingSecondsInput ? edgePaddingSecondsInput.value : null),
     passbandRippleDb: DEFAULT_PASSBAND_RIPPLE_DB,
     stopbandAttenuationDb: DEFAULT_STOPBAND_ATTENUATION_DB
@@ -2088,7 +2101,7 @@ function validateFilterSpec(fs, spec) {
       lowpassPassHz: null,
       lowpassSixDbHz: null,
       edgePaddingEnabled: false,
-      edgePaddingMode: "reflect",
+      edgePaddingMode: "zero",
       edgePaddingSeconds: null,
       passbandRippleDb: DEFAULT_PASSBAND_RIPPLE_DB,
       stopbandAttenuationDb: DEFAULT_STOPBAND_ATTENUATION_DB,
@@ -2169,16 +2182,14 @@ function validateFilterSpec(fs, spec) {
 
   if (edgePaddingEnabled) {
     if (edgePaddingSeconds === null || edgePaddingSeconds <= 0) {
-      edgePaddingSeconds = 1.0;
-      warnings.push("Edge padding seconds were missing/invalid; reset to 1.0 s.");
-    }
-    const maxPadSeconds = Math.max(0, (fs > 0 ? ((Math.max(0, data.wl1 ? data.wl1.length - 2 : fs * 5)) / fs) : 0));
-    if (Number.isFinite(maxPadSeconds) && maxPadSeconds > 0 && edgePaddingSeconds > maxPadSeconds) {
-      edgePaddingSeconds = maxPadSeconds;
-      warnings.push("Edge padding was too long for the loaded signal; reduced.");
+      edgePaddingSeconds = MIN_EDGE_PADDING_SECONDS;
+      warnings.push("Edge padding seconds were missing/invalid; reset to " + MIN_EDGE_PADDING_SECONDS.toFixed(1) + " s.");
+    } else if (edgePaddingSeconds < MIN_EDGE_PADDING_SECONDS) {
+      edgePaddingSeconds = MIN_EDGE_PADDING_SECONDS;
+      warnings.push("Edge padding was below the " + MIN_EDGE_PADDING_SECONDS.toFixed(1) + " s minimum; increased.");
     }
   } else {
-    edgePaddingSeconds = edgePaddingSeconds === null ? 1.0 : edgePaddingSeconds;
+    edgePaddingSeconds = edgePaddingSeconds === null ? MIN_EDGE_PADDING_SECONDS : Math.max(MIN_EDGE_PADDING_SECONDS, edgePaddingSeconds);
   }
 
   const enabled = hpPass !== null || lpPass !== null;
@@ -2190,7 +2201,7 @@ function validateFilterSpec(fs, spec) {
     lowpassPassHz: lpPass,
     lowpassSixDbHz: lpPass === null ? null : lpSix,
     edgePaddingEnabled: edgePaddingEnabled,
-    edgePaddingMode: "reflect",
+    edgePaddingMode: "zero",
     edgePaddingSeconds: edgePaddingSeconds,
     passbandRippleDb: DEFAULT_PASSBAND_RIPPLE_DB,
     stopbandAttenuationDb: DEFAULT_STOPBAND_ATTENUATION_DB,

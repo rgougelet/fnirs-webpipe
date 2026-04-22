@@ -5,7 +5,7 @@ function applyRjgButterworth(series, fs, spec, mode) {
   const padding = resolveEdgePadding(series.length, fs, spec);
   if (!padding.enabled) return forwardBackwardSos(series, design.sos);
 
-  const padded = reflectPad(series, padding.samples);
+  const padded = zeroPad(series, padding.samples);
   const filtered = forwardBackwardSos(padded, design.sos);
   return filtered.slice(padding.samples, padding.samples + series.length);
 }
@@ -288,28 +288,19 @@ function forwardBackwardSos(x, sections) {
 
 function resolveEdgePadding(length, fs, spec) {
   const enabled = !!(spec && spec.edgePaddingEnabled);
-  const seconds = finiteOr(spec && spec.edgePaddingSeconds, 1.0);
+  const seconds = finiteOr(spec && spec.edgePaddingSeconds, 10.0);
   if (!enabled || !Number.isFinite(fs) || fs <= 0 || !Number.isFinite(length) || length < 3) {
     return { enabled: false, samples: 0 };
   }
-  const requested = Math.max(0, Math.round(seconds * fs));
-  const samples = Math.max(0, Math.min(requested, length - 2));
+  const requested = Math.max(10.0, seconds);
+  const samples = Math.max(0, Math.round(requested * fs));
   return { enabled: samples > 0, samples: samples };
 }
 
-function reflectPad(x, padSamples) {
+function zeroPad(x, padSamples) {
   if (!Array.isArray(x) || !x.length || padSamples <= 0) return x.slice();
-  const left = [];
-  const right = [];
-  const n = x.length;
-
-  for (let i = padSamples; i >= 1; i--) {
-    left.push(2 * x[0] - x[i]);
-  }
-  for (let i = n - 2; i >= n - padSamples - 1; i--) {
-    right.push(2 * x[n - 1] - x[i]);
-  }
-
+  const left = new Array(padSamples).fill(0);
+  const right = new Array(padSamples).fill(0);
   return left.concat(x, right);
 }
 
