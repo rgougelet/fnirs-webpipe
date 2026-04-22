@@ -1,7 +1,7 @@
 // app.js
 
-const APP_VERSION = "0.2.1";
-const APP_LAST_UPDATED = "2026-04-22";
+const APP_VERSION = "0.2.2";
+const APP_LAST_UPDATED = "2026-04-22 11:31 EDT";
 const PROTOCOL_SCHEMA_VERSION = 1;
 
 const input = document.getElementById("input");
@@ -1779,19 +1779,23 @@ function parseEvents(t) {
         return { sample, code, label: "E" + code };
       }
 
-      const active = [];
-      markerFields.forEach((value, idx) => {
-        if (value !== 0) active.push(idx + 1);
-      });
-      if (!active.length) return null;
+      const decoded = decodeBinaryMarkerFields(markerFields);
+      if (!decoded.code) return null;
 
       return {
         sample,
-        code: active[0],
-        label: "E" + active.join("+")
+        code: decoded.code,
+        label: "E" + decoded.code
       };
     })
     .filter(Boolean);
+}
+
+function decodeBinaryMarkerFields(markerFields) {
+  return markerFields.reduce((out, value, idx) => {
+    if (value !== 0) out.code += Math.pow(2, idx);
+    return out;
+  }, { code: 0 });
 }
 
 function parseIntervals(text) {
