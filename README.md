@@ -54,6 +54,25 @@ Optional overrides:
 
 Screenshots are written to `screenshots/`.
 
+## Codex workflow
+Use the repo launcher instead of starting Codex manually:
+
+```powershell
+npm run codex
+```
+
+This resumes the most recent Codex session in this repo with inline terminal
+scrollback enabled. It also writes a PowerShell transcript to `chat_histories/`.
+
+Useful variants:
+
+- `npm run codex:new` starts a new session.
+- `npm run codex:pick` opens Codex's resume picker.
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/codex-session.ps1 -NoTranscript` resumes without writing a transcript.
+
+If the Codex TUI was exited with `/exit`, restart with `npm run codex`; it uses
+`codex resume --last`, so you should not need to copy the conversation ID.
+
 ## Status
 Active development.
 
