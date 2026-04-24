@@ -149,13 +149,12 @@ canvas {
 }
 
 .plot-header {
-  font-size: 0.9rem;
+  font-size: 1.04rem;
   font-weight: 650;
   color: #0f172a;
   line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
 }
 
 /* Optional: slightly tighter table feel inside left-rail summaries */
@@ -232,7 +231,7 @@ body {
 
 #stageSummaryHost {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -265,19 +264,16 @@ body {
 }
 
 #plotGrid {
-  --plot-min-width: 1200px;
   min-height: 0;
   flex: 1 1 auto;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   padding: 8px 8px 10px 8px;
   border: 1px solid #cbd5e1;
   background: #f8fafc !important;
-  grid-template-columns: minmax(var(--plot-min-width), 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: 1fr 1fr;
-  gap: 6px;
+  gap: 8px;
   border-right: 8px solid #cbd5e1;
-  scrollbar-gutter: stable;
 }
 
 #plotGrid canvas {
@@ -286,7 +282,7 @@ body {
   border-right: 4px solid #94a3b8;
   width: 100%;
   height: auto;
-  max-height: calc((100vh - 340px) / 3);
+  max-height: calc((100vh - 330px) / 2);
   object-fit: contain;
 }
 

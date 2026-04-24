@@ -28,16 +28,23 @@ canvasTrim.height = PLOT_HEIGHT;
 canvasTrim.classList.add("w-full");
 const ctxTrim = canvasTrim.getContext("2d");
 
-const canvasPhys = document.createElement("canvas");
-canvasPhys.width = PLOT_WIDTH;
-canvasPhys.height = PLOT_HEIGHT;
-canvasPhys.classList.add("w-full");
-const ctxPhys = canvasPhys.getContext("2d");
+const canvasHbO = document.createElement("canvas");
+canvasHbO.width = PLOT_WIDTH;
+canvasHbO.height = PLOT_HEIGHT;
+canvasHbO.classList.add("w-full");
+const ctxHbO = canvasHbO.getContext("2d");
 
-const M = { left: 54, right: 18, top: 10, bottom: 56 };
+const canvasHbR = document.createElement("canvas");
+canvasHbR.width = PLOT_WIDTH;
+canvasHbR.height = PLOT_HEIGHT;
+canvasHbR.classList.add("w-full");
+const ctxHbR = canvasHbR.getContext("2d");
+
+const M = { left: 68, right: 20, top: 12, bottom: 74 };
 let rawPlotHeaderEl = null;
 let trimPlotHeaderEl = null;
-let physPlotHeaderEl = null;
+let hboPlotHeaderEl = null;
+let hbrPlotHeaderEl = null;
 
 let samplingRate = null;
 let data = { wl1: null, wl2: null };
@@ -113,7 +120,8 @@ const MIN_EDGE_PADDING_SECONDS = 10.0;
 let currentPlotMode = "both";
 let rawPanelEl = null;
 let trimPanelEl = null;
-let physPanelEl = null;
+let hboPanelEl = null;
+let hbrPanelEl = null;
 let plotScrollerEl = null;
 
 const DEFAULT_CHANNEL_DISTANCE_MM = 30.0;
@@ -825,32 +833,10 @@ function buildControls() {
 
   const viewCard = document.createElement("div");
   viewCard.className = "rounded border border-slate-200 p-3 flex flex-col space-y-2";
-  const viewTitle = document.createElement("div");
-  viewTitle.className = "font-semibold";
-  viewTitle.textContent = "Plot view";
-  const viewRow = document.createElement("div");
-  viewRow.className = "grid grid-cols-[auto_1fr] gap-2 items-center";
-  const viewLbl = document.createElement("div");
-  viewLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
-  viewLbl.textContent = "Plot view:";
-  plotModeSelect = document.createElement("select");
-  plotModeSelect.className = "p-2 border rounded bg-white w-full text-sm";
-  [
-    { value: "both", label: "Raw + Trimmed" },
-    { value: "raw", label: "Raw only" },
-    { value: "trimmed", label: "Trimmed only" }
-  ].forEach(opt => {
-    const o = document.createElement("option");
-    o.value = opt.value;
-    o.textContent = opt.label;
-    plotModeSelect.appendChild(o);
-  });
-  plotModeSelect.value = currentPlotMode;
-  plotModeSelect.onchange = () => setPlotMode(plotModeSelect.value);
-  plotModeSelect.title = "Choose which plot panel is shown.";
-  viewRow.appendChild(viewLbl);
-  viewRow.appendChild(plotModeSelect);
-  viewCard.appendChild(viewRow);
+  const layoutNote = document.createElement("div");
+  layoutNote.className = "text-xs text-slate-600 leading-tight";
+  layoutNote.textContent = "Layout: 2 x 2 fixed (raw and filtered on the left, HbO and HbR on the right).";
+  viewCard.appendChild(layoutNote);
 
   const windowRow = document.createElement("div");
   windowRow.className = "grid grid-cols-[auto_88px] gap-2 items-center";
@@ -1228,15 +1214,20 @@ function redraw() {
   const processedRangeLabel = formatWindowRangeLabel(processedWindowed.startSeconds, processedWindowed.series.length / samplingRate);
   if (rawPlotHeaderEl) rawPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Input (" + domainLabel + ", " + rawRangeLabel + ") | " + formatStats(computeStats(rawWindowed.series));
   if (trimPlotHeaderEl) trimPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Output (" + filterLabel + (trimStepEnabled ? ", trim on" : ", trim off") + ", " + processedRangeLabel + ") | " + formatStats(computeStats(processedWindowed.series));
-  if (physPlotHeaderEl) {
+  if (hboPlotHeaderEl) {
     if (hbWindowed && hbWindowed.hbo.series.length) {
-      const physRangeLabel = formatWindowRangeLabel(hbWindowed.hbo.startSeconds, hbWindowed.hbo.series.length / samplingRate);
-      physPlotHeaderEl.textContent = chLabel + " Hb Output (MBLL, " + physRangeLabel + ") | "
-        + "HbO " + formatMetricNumber(computeStats(hbWindowed.hbo.series).sd) + " uM sd"
-        + " | HbR " + formatMetricNumber(computeStats(hbWindowed.hbr.series).sd) + " uM sd"
-        + " | HbT " + formatMetricNumber(computeStats(hbWindowed.hbt.series).sd) + " uM sd";
+      const hboRangeLabel = formatWindowRangeLabel(hbWindowed.hbo.startSeconds, hbWindowed.hbo.series.length / samplingRate);
+      hboPlotHeaderEl.textContent = chLabel + " HbO (MBLL, " + hboRangeLabel + ") | " + formatStats(computeStats(hbWindowed.hbo.series));
     } else {
-      physPlotHeaderEl.textContent = chLabel + " Hb Output (MBLL unavailable)";
+      hboPlotHeaderEl.textContent = chLabel + " HbO (MBLL unavailable)";
+    }
+  }
+  if (hbrPlotHeaderEl) {
+    if (hbWindowed && hbWindowed.hbr.series.length) {
+      const hbrRangeLabel = formatWindowRangeLabel(hbWindowed.hbr.startSeconds, hbWindowed.hbr.series.length / samplingRate);
+      hbrPlotHeaderEl.textContent = chLabel + " HbR (MBLL, " + hbrRangeLabel + ") | " + formatStats(computeStats(hbWindowed.hbr.series));
+    } else {
+      hbrPlotHeaderEl.textContent = chLabel + " HbR (MBLL unavailable)";
     }
   }
 
@@ -1272,26 +1263,42 @@ function redraw() {
 
   if (hbWindowed && hbWindowed.hbo.series.length) {
     drawPlot(
-      ctxPhys,
-      canvasPhys,
+      ctxHbO,
+      canvasHbO,
       hbWindowed.hbo.series,
       samplingRate,
       [],
       hbWindowed.hbo.events,
-      chLabel + " Hb Output",
+      chLabel + " HbO",
       "",
       {
         timeOffsetSeconds: hbWindowed.hbo.startSeconds,
-        yLabel: "Delta Hb (uM)",
+        yLabel: "Delta HbO (uM)",
         seriesList: [
-          { label: "HbO", data: hbWindowed.hbo.series, color: "#dc2626" },
-          { label: "HbR", data: hbWindowed.hbr.series, color: "#2563eb" },
-          { label: "HbT", data: hbWindowed.hbt.series, color: "#16a34a" }
+          { label: "HbO", data: hbWindowed.hbo.series, color: "#dc2626" }
+        ]
+      }
+    );
+    drawPlot(
+      ctxHbR,
+      canvasHbR,
+      hbWindowed.hbr.series,
+      samplingRate,
+      [],
+      hbWindowed.hbr.events,
+      chLabel + " HbR",
+      "",
+      {
+        timeOffsetSeconds: hbWindowed.hbr.startSeconds,
+        yLabel: "Delta HbR (uM)",
+        seriesList: [
+          { label: "HbR", data: hbWindowed.hbr.series, color: "#2563eb" }
         ]
       }
     );
   } else {
-    ctxPhys.clearRect(0, 0, canvasPhys.width, canvasPhys.height);
+    ctxHbO.clearRect(0, 0, canvasHbO.width, canvasHbO.height);
+    ctxHbR.clearRect(0, 0, canvasHbR.width, canvasHbR.height);
   }
 
   renderStageSummary({
@@ -2383,23 +2390,33 @@ function initPlotLayout() {
   trimPanel.appendChild(trimPlotHeaderEl);
   trimPanel.appendChild(canvasTrim);
 
-  const physPanel = document.createElement("div");
-  physPanel.className = "plot-panel";
-  physPlotHeaderEl = document.createElement("div");
-  physPlotHeaderEl.className = "plot-header";
-  physPlotHeaderEl.textContent = "Physiology";
-  physPanel.appendChild(physPlotHeaderEl);
-  physPanel.appendChild(canvasPhys);
+  const hboPanel = document.createElement("div");
+  hboPanel.className = "plot-panel";
+  hboPlotHeaderEl = document.createElement("div");
+  hboPlotHeaderEl.className = "plot-header";
+  hboPlotHeaderEl.textContent = "HbO";
+  hboPanel.appendChild(hboPlotHeaderEl);
+  hboPanel.appendChild(canvasHbO);
+
+  const hbrPanel = document.createElement("div");
+  hbrPanel.className = "plot-panel";
+  hbrPlotHeaderEl = document.createElement("div");
+  hbrPlotHeaderEl.className = "plot-header";
+  hbrPlotHeaderEl.textContent = "HbR";
+  hbrPanel.appendChild(hbrPlotHeaderEl);
+  hbrPanel.appendChild(canvasHbR);
 
   rawPanelEl = rawPanel;
   trimPanelEl = trimPanel;
-  physPanelEl = physPanel;
+  hboPanelEl = hboPanel;
+  hbrPanelEl = hbrPanel;
   plotScrollerEl = createPlotScroller();
 
   plotGrid.innerHTML = "";
   plotGrid.appendChild(rawPanel);
+  plotGrid.appendChild(hboPanel);
   plotGrid.appendChild(trimPanel);
-  plotGrid.appendChild(physPanel);
+  plotGrid.appendChild(hbrPanel);
   if (plotScrollerHost) {
     plotScrollerHost.textContent = "";
     plotScrollerHost.appendChild(plotScrollerEl);
@@ -2676,17 +2693,12 @@ function getFilterEngine() {
 }
 
 function applyPlotMode() {
-  if (!rawPanelEl || !trimPanelEl || !physPanelEl || !plotGrid) return;
-
-  const showRaw = (currentPlotMode === "both" || currentPlotMode === "raw");
-  const showTrim = (currentPlotMode === "both" || currentPlotMode === "trimmed");
-
-  rawPanelEl.style.display = showRaw ? "flex" : "none";
-  trimPanelEl.style.display = showTrim ? "flex" : "none";
-  physPanelEl.style.display = "flex";
-
-  const visibleRows = (showRaw ? 1 : 0) + (showTrim ? 1 : 0) + 1;
-  plotGrid.style.gridTemplateRows = Array.from({ length: visibleRows }, () => "1fr").join(" ");
+  if (!rawPanelEl || !trimPanelEl || !hboPanelEl || !hbrPanelEl || !plotGrid) return;
+  rawPanelEl.style.display = "flex";
+  trimPanelEl.style.display = "flex";
+  hboPanelEl.style.display = "flex";
+  hbrPanelEl.style.display = "flex";
+  plotGrid.style.gridTemplateRows = "1fr 1fr";
 }
 
 function isDcRestoreEnabled() {

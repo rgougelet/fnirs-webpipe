@@ -87,7 +87,7 @@ function drawTicks(ctx, canvas, seriesList, samplingRate, timeOffsetSeconds) {
   const yTickCount = getYTickCount(minY, maxY);
   const xTickCount = getXTickCount(canvas.width);
 
-  ctx.font = "15px sans-serif";
+  ctx.font = "18px sans-serif";
   ctx.fillStyle = "#111827";
   ctx.textBaseline = "top";
 
@@ -161,7 +161,7 @@ function drawEvents(ctx, canvas, events, nSamples, samplingRate) {
   ctx.strokeStyle = "#dc2626";
   ctx.fillStyle = "#dc2626";
   ctx.lineWidth = 1.4;
-  ctx.font = "13px sans-serif";
+  ctx.font = "16px sans-serif";
 
   events.forEach(e => {
     const x = M.left + (e.time / dur) * w;
@@ -173,8 +173,8 @@ function drawEvents(ctx, canvas, events, nSamples, samplingRate) {
 
     ctx.fillText(
       eventDisplayLabel(e),
-      x + 2,
-      M.top + 12
+      x + 4,
+      M.top + 14
     );
   });
 }
@@ -210,13 +210,13 @@ function eventDisplayLabel(event) {
 
 function drawLabels(ctx, canvas, yLabel) {
   ctx.fillStyle = "#111827";
-  ctx.font = "16px sans-serif";
+  ctx.font = "20px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
   ctx.fillText("Time (s)", canvas.width / 2, canvas.height - 6);
 
   ctx.save();
-  ctx.translate(M.left - 42, canvas.height / 2);
+  ctx.translate(M.left - 50, canvas.height / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
@@ -228,8 +228,8 @@ function drawLegend(ctx, canvas, seriesList) {
   const entries = seriesList.filter(item => item && item.label);
   if (!entries.length) return;
 
-  const boxWidth = 126;
-  const boxHeight = 18 + entries.length * 18;
+  const boxWidth = 146;
+  const boxHeight = 20 + entries.length * 22;
   const x = canvas.width - M.right - boxWidth;
   const y = M.top + 8;
 
@@ -239,12 +239,12 @@ function drawLegend(ctx, canvas, seriesList) {
   ctx.lineWidth = 1;
   ctx.fillRect(x, y, boxWidth, boxHeight);
   ctx.strokeRect(x, y, boxWidth, boxHeight);
-  ctx.font = "13px sans-serif";
+  ctx.font = "15px sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
 
   entries.forEach((item, idx) => {
-    const rowY = y + 18 + idx * 18;
+    const rowY = y + 20 + idx * 22;
     ctx.strokeStyle = item.color || "#0f172a";
     ctx.lineWidth = 2;
     ctx.beginPath();
