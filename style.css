@@ -230,6 +230,40 @@ body {
   align-self: stretch;
 }
 
+#stageSummaryHost {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.stage-card {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.stage-card-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.stage-card-formula {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: #475569;
+  line-height: 1.35;
+}
+
+.stage-card-detail {
+  margin-top: 6px;
+  font-size: 0.77rem;
+  color: #334155;
+  line-height: 1.4;
+}
+
 #plotGrid {
   --plot-min-width: 1200px;
   min-height: 0;
@@ -252,7 +286,7 @@ body {
   border-right: 4px solid #94a3b8;
   width: 100%;
   height: auto;
-  max-height: calc((100vh - 255px) / 2);
+  max-height: calc((100vh - 340px) / 3);
   object-fit: contain;
 }
 
@@ -308,6 +342,23 @@ body.theme-dark #plotGrid {
   border-color: #334155 !important;
   border-right: 12px solid #1e293b !important;
   color: #0f172a !important;
+}
+
+body.theme-dark .stage-card {
+  background: #111827;
+  border-color: #334155;
+}
+
+body.theme-dark .stage-card-title {
+  color: #f8fafc;
+}
+
+body.theme-dark .stage-card-formula {
+  color: #94a3b8;
+}
+
+body.theme-dark .stage-card-detail {
+  color: #cbd5e1;
 }
 
 body.theme-dark .bg-slate-50 {

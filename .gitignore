@@ -4,4 +4,5 @@ screenshots/
 nirx-local/
 references/
 chat_histories/
+agents/chat-history/
 .claude/

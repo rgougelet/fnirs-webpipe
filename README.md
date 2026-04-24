@@ -8,9 +8,14 @@ Desktop-only scope: this project does not target mobile layouts or mobile captur
 
 Current pipeline controls expose these ordered steps:
 - Input signal domain: `Intensity (a.u.)` or `Delta OD`
+- Explicit stage cards for intensity, `Delta OD`, processed `Delta OD`, and relative hemoglobin output
+- Relative physiology output via MBLL (`HbO`, `HbR`, `HbT`) using paired wavelengths
 - Butterworth filtering
 - Interval trimming
 - Plot view selection (raw, trimmed, or both)
+
+Current MBLL support is configured for standard NIRx `760/850 nm` pairs and uses
+per-channel source-detector distance from the loaded header when available.
 
 ## Filter Duration Guidance
 Low-frequency filter edges are constrained mainly by recording duration, not by FFT padding.

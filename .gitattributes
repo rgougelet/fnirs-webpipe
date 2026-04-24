@@ -11,4 +11,5 @@
 
 *.bat text eol=crlf
 .gitattributes text eol=lf
+.gitignore text eol=lf
 LICENSE text eol=lf

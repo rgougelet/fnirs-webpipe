@@ -1,7 +1,7 @@
 // app.js
 
-const APP_VERSION = "0.2.3";
-const APP_LAST_UPDATED = "2026-04-22 12:30 EDT";
+const APP_VERSION = "0.3.0";
+const APP_LAST_UPDATED = "2026-04-24 15:05 EDT";
 const PROTOCOL_SCHEMA_VERSION = 1;
 
 const input = document.getElementById("input");
@@ -10,6 +10,7 @@ const controls = document.getElementById("controls");
 const protocolHost = document.getElementById("protocolHost");
 const plotGrid = document.getElementById("plotGrid");
 const plotScrollerHost = document.getElementById("plotScrollerHost");
+const stageSummaryHost = document.getElementById("stageSummaryHost");
 const appVersionEl = document.getElementById("appVersion");
 const appLastUpdatedEl = document.getElementById("appLastUpdated");
 
@@ -27,15 +28,24 @@ canvasTrim.height = PLOT_HEIGHT;
 canvasTrim.classList.add("w-full");
 const ctxTrim = canvasTrim.getContext("2d");
 
+const canvasPhys = document.createElement("canvas");
+canvasPhys.width = PLOT_WIDTH;
+canvasPhys.height = PLOT_HEIGHT;
+canvasPhys.classList.add("w-full");
+const ctxPhys = canvasPhys.getContext("2d");
+
 const M = { left: 54, right: 18, top: 10, bottom: 56 };
 let rawPlotHeaderEl = null;
 let trimPlotHeaderEl = null;
+let physPlotHeaderEl = null;
 
 let samplingRate = null;
 let data = { wl1: null, wl2: null };
 let events = [];
 let channelLabels = [];
 let channelLabelSource = "default";
+let channelDistancesMm = [];
+let wavelengthsNm = [760, 850];
 
 let currentWavelength = "wl1";
 let currentChannel = 0;
@@ -61,6 +71,8 @@ let signalDomainSelect = null;
 let filterStepCheckbox = null;
 let trimStepCheckbox = null;
 let pipelineSummaryEl = null;
+let dpfWl1Input = null;
+let dpfWl2Input = null;
 let filterStepEnabled = true;
 let trimStepEnabled = true;
 let amplitudePreservationMode = "none";
@@ -101,7 +113,21 @@ const MIN_EDGE_PADDING_SECONDS = 10.0;
 let currentPlotMode = "both";
 let rawPanelEl = null;
 let trimPanelEl = null;
+let physPanelEl = null;
 let plotScrollerEl = null;
+
+const DEFAULT_CHANNEL_DISTANCE_MM = 30.0;
+const DEFAULT_DPF = {
+  wl1: 6.0,
+  wl2: 6.0
+};
+// Extinction coefficients below match Homer3 GetExtinctions default spectrum
+// (Wray et al., 1988) at 760/850 nm after 2.303 scaling. Values are stored in
+// [(1/cm)/(mmol/L)] so the MBLL solve returns mmol/L before conversion to uM.
+const MBLL_EXTINCTION_BY_WAVELENGTH = {
+  760: { hbo: 1.4866, hbr: 3.8437 },
+  850: { hbo: 2.5264, hbr: 1.7986 }
+};
 
 initTheme();
 initPlotMode();
@@ -198,6 +224,8 @@ function resetAllState() {
   events = [];
   channelLabels = [];
   channelLabelSource = "default";
+  channelDistancesMm = [];
+  wavelengthsNm = [760, 850];
 
   currentWavelength = "wl1";
   currentChannel = 0;
@@ -215,6 +243,8 @@ function resetAllState() {
     eventsFrom: null,
     channelLabelsFrom: null
   };
+
+  if (stageSummaryHost) stageSummaryHost.innerHTML = "";
 }
 
 /* ================= ZIP handling (auto detect protocol ZIP) ================= */
@@ -338,6 +368,8 @@ async function loadNirxDatasetFromReaders(parts) {
     const hdrT = await hdr.readText();
     samplingRate = parseSamplingRate(hdrT);
     sources.samplingRateFrom = hdr.name;
+    const parsedWavelengths = parseHdrWavelengths(hdrT);
+    if (parsedWavelengths.length >= 2) wavelengthsNm = parsedWavelengths.slice(0, 2);
 
     const matBuf = probeMat ? await probeMat.readArrayBuffer() : null;
     let channelCountHint = parseHdrChannelCountHint(hdrT);
@@ -359,6 +391,11 @@ async function loadNirxDatasetFromReaders(parts) {
     data.wl2 = parseMatrix(wl2T, channelCountHint);
 
     const actualChannelCount = inferMatrixChannelCount(data.wl1, data.wl2);
+    channelDistancesMm = normalizeNumericList(
+      parseHdrChannelDistancesMm(hdrT),
+      actualChannelCount,
+      DEFAULT_CHANNEL_DISTANCE_MM
+    );
     if (channelLabels.length) {
       channelLabels = channelLabels.slice(0, actualChannelCount);
       if (channelLabels.length !== actualChannelCount) {
@@ -595,8 +632,51 @@ function buildControls() {
   pipelineSummaryEl = document.createElement("div");
   pipelineSummaryEl.className = "text-xs text-slate-600 leading-tight";
 
+  const physiologyRow = document.createElement("div");
+  physiologyRow.className = "grid grid-cols-[auto_auto_68px_auto_68px] gap-2 items-center";
+  const physiologyLbl = document.createElement("div");
+  physiologyLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
+  physiologyLbl.textContent = "MBLL DPF:";
+  dpfWl1Input = document.createElement("input");
+  dpfWl1Input.type = "text";
+  dpfWl1Input.inputMode = "decimal";
+  dpfWl1Input.value = String(DEFAULT_DPF.wl1);
+  dpfWl1Input.className = "p-2 border rounded bg-white w-full text-sm";
+  dpfWl1Input.title = "Differential pathlength factor for wavelength 1.";
+  dpfWl1Input.oninput = () => {
+    redraw();
+    renderMeta();
+  };
+  dpfWl2Input = document.createElement("input");
+  dpfWl2Input.type = "text";
+  dpfWl2Input.inputMode = "decimal";
+  dpfWl2Input.value = String(DEFAULT_DPF.wl2);
+  dpfWl2Input.className = "p-2 border rounded bg-white w-full text-sm";
+  dpfWl2Input.title = "Differential pathlength factor for wavelength 2.";
+  dpfWl2Input.oninput = () => {
+    redraw();
+    renderMeta();
+  };
+  const dpfWl1Lbl = document.createElement("div");
+  dpfWl1Lbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
+  const dpfWl2Lbl = document.createElement("div");
+  dpfWl2Lbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
+  dpfWl1Lbl.textContent = getWavelengthLabel(0);
+  dpfWl2Lbl.textContent = getWavelengthLabel(1);
+  physiologyRow.appendChild(physiologyLbl);
+  physiologyRow.appendChild(dpfWl1Lbl);
+  physiologyRow.appendChild(dpfWl1Input);
+  physiologyRow.appendChild(dpfWl2Lbl);
+  physiologyRow.appendChild(dpfWl2Input);
+
+  const physiologyNote = document.createElement("div");
+  physiologyNote.className = "text-xs text-slate-600 leading-tight";
+  physiologyNote.textContent = "Derived physiology uses delta OD at both wavelengths and channel distance from the NIRx header to estimate relative HbO/HbR/HbT.";
+
   pipelineDiv.appendChild(domainRow);
   pipelineDiv.appendChild(flagsRow);
+  pipelineDiv.appendChild(physiologyRow);
+  pipelineDiv.appendChild(physiologyNote);
   pipelineDiv.appendChild(pipelineSummaryEl);
 
   const exDiv = document.createElement("div");
@@ -884,15 +964,14 @@ function getSignalDomain() {
 
 function updatePipelineSummary() {
   if (!pipelineSummaryEl) return;
-  const domainLabel = getSignalDomain() === "delta_od" ? "Delta OD" : "Intensity";
   const filterLabel = filterStepEnabled ? "Filter on" : "Filter off";
   const trimLabel = trimStepEnabled ? "Trim on" : "Trim off";
-  pipelineSummaryEl.textContent = "Raw -> " + domainLabel + " -> " + filterLabel + " -> " + trimLabel + " -> Plot";
+  pipelineSummaryEl.textContent = "Intensity -> Delta OD -> " + filterLabel + " -> " + trimLabel + " -> MBLL Hb";
 }
 
 function intensityToDeltaOd(series) {
   if (!Array.isArray(series) || !series.length) return [];
-  // Adapted from Homer/NIRS-KIT intensity->OD methods: dOD = -log(|d|/mean(|d|)).
+  // Method matches Homer3/NIRS-KIT intensity->OD: dOD = -log(|I| / mean(|I|)).
   const safe = series.map(v => Math.abs(Number(v)));
   const meanAbs = safe.reduce((sum, v) => sum + v, 0) / safe.length;
   if (!Number.isFinite(meanAbs) || meanAbs <= 0) return series.slice();
@@ -900,6 +979,108 @@ function intensityToDeltaOd(series) {
     const denom = v <= 0 ? Number.EPSILON : v;
     return -Math.log(denom / meanAbs);
   });
+}
+
+function getWavelengthNm(index) {
+  return Array.isArray(wavelengthsNm) && Number.isFinite(wavelengthsNm[index]) ? Number(wavelengthsNm[index]) : (index === 0 ? 760 : 850);
+}
+
+function getWavelengthLabel(index) {
+  return getWavelengthNm(index) + " nm";
+}
+
+function getCurrentChannelDistanceMm() {
+  const value = Array.isArray(channelDistancesMm) ? channelDistancesMm[currentChannel] : null;
+  if (Number.isFinite(value) && value > 0) {
+    return {
+      distanceMm: Number(value),
+      source: "HDR"
+    };
+  }
+  return {
+    distanceMm: DEFAULT_CHANNEL_DISTANCE_MM,
+    source: "default"
+  };
+}
+
+function getCurrentMbllConfig() {
+  const wl1Nm = getWavelengthNm(0);
+  const wl2Nm = getWavelengthNm(1);
+  const coeff1 = MBLL_EXTINCTION_BY_WAVELENGTH[wl1Nm];
+  const coeff2 = MBLL_EXTINCTION_BY_WAVELENGTH[wl2Nm];
+  const dpf1 = numberOrNull(dpfWl1Input ? dpfWl1Input.value : DEFAULT_DPF.wl1);
+  const dpf2 = numberOrNull(dpfWl2Input ? dpfWl2Input.value : DEFAULT_DPF.wl2);
+  const channelDistance = getCurrentChannelDistanceMm();
+
+  if (!coeff1 || !coeff2) {
+    return {
+      supported: false,
+      reason: "MBLL is currently configured only for 760/850 nm datasets.",
+      wl1Nm,
+      wl2Nm,
+      dpf1,
+      dpf2,
+      distanceMm: channelDistance.distanceMm,
+      distanceSource: channelDistance.source
+    };
+  }
+
+  if (!Number.isFinite(dpf1) || dpf1 <= 0 || !Number.isFinite(dpf2) || dpf2 <= 0) {
+    return {
+      supported: false,
+      reason: "DPF values must be positive numbers.",
+      wl1Nm,
+      wl2Nm,
+      dpf1,
+      dpf2,
+      distanceMm: channelDistance.distanceMm,
+      distanceSource: channelDistance.source
+    };
+  }
+
+  return {
+    supported: true,
+    wl1Nm,
+    wl2Nm,
+    dpf1,
+    dpf2,
+    distanceMm: channelDistance.distanceMm,
+    distanceSource: channelDistance.source,
+    coeff1,
+    coeff2
+  };
+}
+
+function deltaOdToHemoglobin(deltaOdWl1, deltaOdWl2, config) {
+  if (!config || !config.supported) return null;
+  const length = Math.min(
+    Array.isArray(deltaOdWl1) ? deltaOdWl1.length : 0,
+    Array.isArray(deltaOdWl2) ? deltaOdWl2.length : 0
+  );
+  if (!length) return { hbo: [], hbr: [], hbt: [] };
+
+  const rhoCm = config.distanceMm / 10.0;
+  const a11 = config.coeff1.hbo * rhoCm * config.dpf1;
+  const a12 = config.coeff1.hbr * rhoCm * config.dpf1;
+  const a21 = config.coeff2.hbo * rhoCm * config.dpf2;
+  const a22 = config.coeff2.hbr * rhoCm * config.dpf2;
+  const det = a11 * a22 - a12 * a21;
+
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null;
+
+  const hbo = new Array(length);
+  const hbr = new Array(length);
+  const hbt = new Array(length);
+  for (let i = 0; i < length; i++) {
+    const d1 = Number(deltaOdWl1[i]) || 0;
+    const d2 = Number(deltaOdWl2[i]) || 0;
+    const hbOMm = (d1 * a22 - a12 * d2) / det;
+    const hbRMm = (a11 * d2 - d1 * a21) / det;
+    hbo[i] = hbOMm * 1000.0;
+    hbr[i] = hbRMm * 1000.0;
+    hbt[i] = hbo[i] + hbr[i];
+  }
+  return { hbo, hbr, hbt };
 }
 
 function resetProtocolUiOnly() {
@@ -925,6 +1106,8 @@ function resetProtocolUiOnly() {
   if (edgePaddingCheckbox) edgePaddingCheckbox.checked = true;
   if (edgePaddingSecondsInput) edgePaddingSecondsInput.value = String(MIN_EDGE_PADDING_SECONDS);
   if (signalDomainSelect) signalDomainSelect.value = "intensity";
+  if (dpfWl1Input) dpfWl1Input.value = String(DEFAULT_DPF.wl1);
+  if (dpfWl2Input) dpfWl2Input.value = String(DEFAULT_DPF.wl2);
   filterStepEnabled = true;
   trimStepEnabled = true;
   amplitudePreservationMode = "none";
@@ -983,16 +1166,79 @@ function redraw() {
   const processedDisplay = getDisplayWindow(processed, trimmedEvents, null, samplingRate, validated);
   updateViewNavigationUi(rawDisplay.series.length / samplingRate);
   const requestedWindow = getRequestedPlotWindowSeconds(rawDisplay.series.length / samplingRate);
-  const rawWindowed = sliceDisplayByTimeWindow(rawDisplay, samplingRate, getWindowStartSeconds(rawDisplay.series.length / samplingRate, requestedWindow), requestedWindow);
+  const windowStartSeconds = getWindowStartSeconds(rawDisplay.series.length / samplingRate, requestedWindow);
+  const rawWindowed = sliceDisplayByTimeWindow(rawDisplay, samplingRate, windowStartSeconds, requestedWindow);
   const processedWindowed = sliceDisplayByTimeWindow(processedDisplay, samplingRate, rawWindowed.startSeconds, requestedWindow);
 
-  const wlLabel = currentWavelength === "wl1" ? "760 nm" : "850 nm";
+  const rawIntensityWl1 = data.wl1.map(r => r[currentChannel]);
+  const rawIntensityWl2 = data.wl2.map(r => r[currentChannel]);
+  const deltaOdWl1 = intensityToDeltaOd(rawIntensityWl1);
+  const deltaOdWl2 = intensityToDeltaOd(rawIntensityWl2);
+
+  let filteredOdWl1 = deltaOdWl1.slice();
+  let filteredOdWl2 = deltaOdWl2.slice();
+  if (filterStepEnabled && validated.enabled) {
+    filteredOdWl1 = applyRjgButterworth(deltaOdWl1, samplingRate, validated, filterEngine);
+    filteredOdWl2 = applyRjgButterworth(deltaOdWl2, samplingRate, validated, filterEngine);
+    if (amplitudePreservationMode === "rms_normalize_to_pre_filter") {
+      filteredOdWl1 = rmsNormalize(deltaOdWl1, filteredOdWl1, Math.ceil(samplingRate || 0));
+      filteredOdWl2 = rmsNormalize(deltaOdWl2, filteredOdWl2, Math.ceil(samplingRate || 0));
+    }
+    if (dcRestore) {
+      filteredOdWl1 = restoreDcMean(deltaOdWl1, filteredOdWl1);
+      filteredOdWl2 = restoreDcMean(deltaOdWl2, filteredOdWl2);
+    }
+  }
+
+  const processedOdWl1 = trimStepEnabled ? applyExclusions(filteredOdWl1, intervals) : filteredOdWl1.slice();
+  const processedOdWl2 = trimStepEnabled ? applyExclusions(filteredOdWl2, intervals) : filteredOdWl2.slice();
+
+  const intensityDisplayWl1 = getDisplayWindow(rawIntensityWl1, rawEvents, intervals, samplingRate, validated);
+  const intensityDisplayWl2 = getDisplayWindow(rawIntensityWl2, rawEvents, intervals, samplingRate, validated);
+  const deltaOdDisplayWl1 = getDisplayWindow(deltaOdWl1, rawEvents, intervals, samplingRate, validated);
+  const deltaOdDisplayWl2 = getDisplayWindow(deltaOdWl2, rawEvents, intervals, samplingRate, validated);
+  const processedOdDisplayWl1 = getDisplayWindow(processedOdWl1, trimmedEvents, null, samplingRate, validated);
+  const processedOdDisplayWl2 = getDisplayWindow(processedOdWl2, trimmedEvents, null, samplingRate, validated);
+
+  const intensityWindowedWl1 = sliceDisplayByTimeWindow(intensityDisplayWl1, samplingRate, rawWindowed.startSeconds, requestedWindow);
+  const intensityWindowedWl2 = sliceDisplayByTimeWindow(intensityDisplayWl2, samplingRate, rawWindowed.startSeconds, requestedWindow);
+  const deltaOdWindowedWl1 = sliceDisplayByTimeWindow(deltaOdDisplayWl1, samplingRate, rawWindowed.startSeconds, requestedWindow);
+  const deltaOdWindowedWl2 = sliceDisplayByTimeWindow(deltaOdDisplayWl2, samplingRate, rawWindowed.startSeconds, requestedWindow);
+  const processedOdWindowedWl1 = sliceDisplayByTimeWindow(processedOdDisplayWl1, samplingRate, rawWindowed.startSeconds, requestedWindow);
+  const processedOdWindowedWl2 = sliceDisplayByTimeWindow(processedOdDisplayWl2, samplingRate, rawWindowed.startSeconds, requestedWindow);
+
+  const mbllConfig = getCurrentMbllConfig();
+  const hbSeries = deltaOdToHemoglobin(processedOdWl1, processedOdWl2, mbllConfig);
+  let hbWindowed = null;
+  if (hbSeries) {
+    const hbDisplayHbo = getDisplayWindow(hbSeries.hbo, trimmedEvents, null, samplingRate, validated);
+    const hbDisplayHbr = getDisplayWindow(hbSeries.hbr, trimmedEvents, null, samplingRate, validated);
+    const hbDisplayHbt = getDisplayWindow(hbSeries.hbt, trimmedEvents, null, samplingRate, validated);
+    hbWindowed = {
+      hbo: sliceDisplayByTimeWindow(hbDisplayHbo, samplingRate, rawWindowed.startSeconds, requestedWindow),
+      hbr: sliceDisplayByTimeWindow(hbDisplayHbr, samplingRate, rawWindowed.startSeconds, requestedWindow),
+      hbt: sliceDisplayByTimeWindow(hbDisplayHbt, samplingRate, rawWindowed.startSeconds, requestedWindow)
+    };
+  }
+
+  const wlLabel = currentWavelength === "wl1" ? getWavelengthLabel(0) : getWavelengthLabel(1);
   const chLabel = channelLabels[currentChannel];
   const domainLabel = signalDomain === "delta_od" ? "Delta OD" : "Intensity";
   const rawRangeLabel = formatWindowRangeLabel(rawWindowed.startSeconds, rawWindowed.series.length / samplingRate);
   const processedRangeLabel = formatWindowRangeLabel(processedWindowed.startSeconds, processedWindowed.series.length / samplingRate);
   if (rawPlotHeaderEl) rawPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Input (" + domainLabel + ", " + rawRangeLabel + ") | " + formatStats(computeStats(rawWindowed.series));
   if (trimPlotHeaderEl) trimPlotHeaderEl.textContent = wlLabel + " " + chLabel + " Output (" + filterLabel + (trimStepEnabled ? ", trim on" : ", trim off") + ", " + processedRangeLabel + ") | " + formatStats(computeStats(processedWindowed.series));
+  if (physPlotHeaderEl) {
+    if (hbWindowed && hbWindowed.hbo.series.length) {
+      const physRangeLabel = formatWindowRangeLabel(hbWindowed.hbo.startSeconds, hbWindowed.hbo.series.length / samplingRate);
+      physPlotHeaderEl.textContent = chLabel + " Hb Output (MBLL, " + physRangeLabel + ") | "
+        + "HbO " + formatMetricNumber(computeStats(hbWindowed.hbo.series).sd) + " uM sd"
+        + " | HbR " + formatMetricNumber(computeStats(hbWindowed.hbr.series).sd) + " uM sd"
+        + " | HbT " + formatMetricNumber(computeStats(hbWindowed.hbt.series).sd) + " uM sd";
+    } else {
+      physPlotHeaderEl.textContent = chLabel + " Hb Output (MBLL unavailable)";
+    }
+  }
 
   drawPlot(
     ctxRaw,
@@ -1003,7 +1249,10 @@ function redraw() {
     rawWindowed.events,
     wlLabel + " " + chLabel + " Input (" + domainLabel + ")",
     formatStats(computeStats(rawWindowed.series)),
-    { timeOffsetSeconds: rawWindowed.startSeconds }
+    {
+      timeOffsetSeconds: rawWindowed.startSeconds,
+      yLabel: signalDomain === "delta_od" ? "Delta OD" : "Intensity (a.u.)"
+    }
   );
 
   drawPlot(
@@ -1015,8 +1264,48 @@ function redraw() {
     processedWindowed.events,
     wlLabel + " " + chLabel + " Output (" + filterLabel + ")",
     formatStats(computeStats(processedWindowed.series)),
-    { timeOffsetSeconds: processedWindowed.startSeconds }
+    {
+      timeOffsetSeconds: processedWindowed.startSeconds,
+      yLabel: signalDomain === "delta_od" ? "Delta OD" : "Intensity (a.u.)"
+    }
   );
+
+  if (hbWindowed && hbWindowed.hbo.series.length) {
+    drawPlot(
+      ctxPhys,
+      canvasPhys,
+      hbWindowed.hbo.series,
+      samplingRate,
+      [],
+      hbWindowed.hbo.events,
+      chLabel + " Hb Output",
+      "",
+      {
+        timeOffsetSeconds: hbWindowed.hbo.startSeconds,
+        yLabel: "Delta Hb (uM)",
+        seriesList: [
+          { label: "HbO", data: hbWindowed.hbo.series, color: "#dc2626" },
+          { label: "HbR", data: hbWindowed.hbr.series, color: "#2563eb" },
+          { label: "HbT", data: hbWindowed.hbt.series, color: "#16a34a" }
+        ]
+      }
+    );
+  } else {
+    ctxPhys.clearRect(0, 0, canvasPhys.width, canvasPhys.height);
+  }
+
+  renderStageSummary({
+    filterLabel,
+    trimEnabled: trimStepEnabled,
+    intensityWindowedWl1,
+    intensityWindowedWl2,
+    deltaOdWindowedWl1,
+    deltaOdWindowedWl2,
+    processedOdWindowedWl1,
+    processedOdWindowedWl2,
+    hbWindowed,
+    mbllConfig
+  });
 }
 
 /* ================= Meta and protocol summary ================= */
@@ -1036,12 +1325,17 @@ function renderMeta() {
   const bProbe = basename(sources.probeMat) || "none";
 
   const validated = validateFilterSpec(samplingRate, getRequestedFilterSpec());
+  const mbllConfig = getCurrentMbllConfig();
 
   let filterText = filterStepEnabled ? "off" : "disabled";
   if (validated.enabled) filterText = describeFilterSpec(validated);
   const dcRestore = isDcRestoreEnabled();
   const filterWarning = validated.warning ? escapeHtml(validated.warning) : "";
   const durationGuide = escapeHtml(buildDurationGuidance(validated, data.wl1.length / samplingRate));
+  const wavelengthsText = escapeHtml(getWavelengthLabel(0) + ", " + getWavelengthLabel(1));
+  const distanceText = escapeHtml(formatMetricNumber(mbllConfig.distanceMm) + " mm (" + mbllConfig.distanceSource + ")");
+  const dpfText = escapeHtml(formatMetricNumber(mbllConfig.dpf1) + ", " + formatMetricNumber(mbllConfig.dpf2));
+  const physiologyText = escapeHtml(mbllConfig.supported ? "relative HbO/HbR/HbT via MBLL" : mbllConfig.reason);
 
   const labelText = (branchTagInput ? branchTagInput.value.trim() : "") || "none";
   let eventRows = "";
@@ -1065,10 +1359,14 @@ function renderMeta() {
     + "  <div class='text-slate-600'>Duration</div><div>" + (data.wl1.length / samplingRate).toFixed(2) + " s</div>"
     + "  <div class='text-slate-600'>Channels</div><div>" + data.wl1[0].length + "</div>"
     + "  <div class='text-slate-600'>Signal domain</div><div>" + (getSignalDomain() === "delta_od" ? "Delta OD" : "Intensity (a.u.)") + "</div>"
+    + "  <div class='text-slate-600'>Wavelengths</div><div>" + wavelengthsText + "</div>"
+    + "  <div class='text-slate-600'>Channel distance</div><div>" + distanceText + "</div>"
     + "  <div class='text-slate-600'>Filter</div><div>" + escapeHtml(filterText) + "</div>"
     + "  <div class='text-slate-600'>Filter step</div><div>" + (filterStepEnabled ? "on" : "off") + "</div>"
     + "  <div class='text-slate-600'>DC restore</div><div>" + (dcRestore ? "on" : "off") + "</div>"
     + "  <div class='text-slate-600'>Trim step</div><div>" + (trimStepEnabled ? "on" : "off") + "</div>"
+    + "  <div class='text-slate-600'>MBLL DPF</div><div>" + dpfText + "</div>"
+    + "  <div class='text-slate-600'>Physiology</div><div>" + physiologyText + "</div>"
     + "  <div class='text-slate-600'>Filter note</div><div>" + (filterWarning || "none") + "</div>"
     + "  <div class='text-slate-600'>Duration guide</div><div>" + durationGuide + "</div>"
     + "  <div class='text-slate-600'>Protocol label</div><div>" + escapeHtml(labelText) + "</div>"
@@ -1112,6 +1410,7 @@ function buildProtocolObject() {
   const validated = validateFilterSpec(samplingRate, getRequestedFilterSpec());
   const filterEngine = getFilterEngine();
   const dcRestore = isDcRestoreEnabled();
+  const mbllConfig = getCurrentMbllConfig();
 
   const steps = [];
 
@@ -1144,6 +1443,16 @@ function buildProtocolObject() {
     step: "trim",
     enabled: trimStepEnabled,
     intervalsSeconds: intervals
+  });
+
+  steps.push({
+    step: "transform_od_to_hb_mbll",
+    enabled: !!mbllConfig.supported,
+    wavelengthsNm: [mbllConfig.wl1Nm, mbllConfig.wl2Nm],
+    dpf: [mbllConfig.dpf1, mbllConfig.dpf2],
+    channelDistanceMm: mbllConfig.distanceMm,
+    distanceSource: mbllConfig.distanceSource,
+    output: ["hbo_uM", "hbr_uM", "hbt_uM"]
   });
 
   const protocol = {
@@ -1227,7 +1536,14 @@ function buildProtocolSummary(protocol) {
     if (f.amplitudePreservation === "rms_normalize_to_pre_filter") filterPart += " amp=rms";
   }
 
-  return labelPart + "wl=" + wlTxt + " | ch=" + chLbl + " | " + domainPart + " | " + filterPart + " | " + trimPart;
+  let physiologyPart = "hb=off";
+  const hb = (protocol.steps || []).find(s => s.step === "transform_od_to_hb_mbll");
+  if (hb && hb.enabled) {
+    const dpf = Array.isArray(hb.dpf) ? hb.dpf.map(v => formatHz(v)).join("/") : "?/?";
+    physiologyPart = "hb=mbll dpf[" + dpf + "]";
+  }
+
+  return labelPart + "wl=" + wlTxt + " | ch=" + chLbl + " | " + domainPart + " | " + filterPart + " | " + trimPart + " | " + physiologyPart;
 }
 
 function exportProtocol() {
@@ -1309,6 +1625,15 @@ function applyProtocol(protocol) {
   const transformStep = (p.steps || []).find(s => s.step === "transform_intensity_to_od");
   if (signalDomainSelect) {
     signalDomainSelect.value = (transformStep && transformStep.enabled) ? "delta_od" : "intensity";
+  }
+  const hbStep = (p.steps || []).find(s => s.step === "transform_od_to_hb_mbll");
+  if (hbStep) {
+    const dpf = Array.isArray(hbStep.dpf) ? hbStep.dpf : [DEFAULT_DPF.wl1, DEFAULT_DPF.wl2];
+    if (dpfWl1Input) dpfWl1Input.value = String(numberOrNull(dpf[0]) || DEFAULT_DPF.wl1);
+    if (dpfWl2Input) dpfWl2Input.value = String(numberOrNull(dpf[1]) || DEFAULT_DPF.wl2);
+  } else {
+    if (dpfWl1Input) dpfWl1Input.value = String(DEFAULT_DPF.wl1);
+    if (dpfWl2Input) dpfWl2Input.value = String(DEFAULT_DPF.wl2);
   }
 
   const f = (p.steps || []).find(s => s.step === "filter_butterworth_iir");
@@ -1470,7 +1795,16 @@ function normalizeProtocol(raw) {
         plotView: "both",
         amplitudePreservation: "none"
       },
-      { step: "trim", enabled: true, intervalsSeconds: [] }
+      { step: "trim", enabled: true, intervalsSeconds: [] },
+      {
+        step: "transform_od_to_hb_mbll",
+        enabled: true,
+        wavelengthsNm: [760, 850],
+        dpf: [DEFAULT_DPF.wl1, DEFAULT_DPF.wl2],
+        channelDistanceMm: DEFAULT_CHANNEL_DISTANCE_MM,
+        distanceSource: "default",
+        output: ["hbo_uM", "hbr_uM", "hbt_uM"]
+      }
     ];
   }
 
@@ -1515,6 +1849,30 @@ function normalizeProtocol(raw) {
     f.plotView = (f.plotView === "raw" || f.plotView === "trimmed" || f.plotView === "both") ? f.plotView : "both";
     f.amplitudePreservation = "none";
   }
+
+  let hb = out.steps.find(s => s.step === "transform_od_to_hb_mbll");
+  if (!hb) {
+    hb = {
+      step: "transform_od_to_hb_mbll",
+      enabled: true,
+      wavelengthsNm: [760, 850],
+      dpf: [DEFAULT_DPF.wl1, DEFAULT_DPF.wl2],
+      channelDistanceMm: DEFAULT_CHANNEL_DISTANCE_MM,
+      distanceSource: "default",
+      output: ["hbo_uM", "hbr_uM", "hbt_uM"]
+    };
+    out.steps.push(hb);
+  }
+  hb.enabled = (typeof hb.enabled === "boolean") ? hb.enabled : true;
+  if (!Array.isArray(hb.dpf) || hb.dpf.length < 2) hb.dpf = [DEFAULT_DPF.wl1, DEFAULT_DPF.wl2];
+  hb.dpf = hb.dpf.map((v, idx) => {
+    const fallback = idx === 0 ? DEFAULT_DPF.wl1 : DEFAULT_DPF.wl2;
+    const parsed = numberOrNull(v);
+    return parsed === null || parsed <= 0 ? fallback : parsed;
+  }).slice(0, 2);
+  hb.channelDistanceMm = numberOrNull(hb.channelDistanceMm) === null ? DEFAULT_CHANNEL_DISTANCE_MM : Number(hb.channelDistanceMm);
+  hb.distanceSource = typeof hb.distanceSource === "string" ? hb.distanceSource : "default";
+  hb.output = ["hbo_uM", "hbr_uM", "hbt_uM"];
 
   out.protocolSummary = buildProtocolSummary(out);
   return out;
@@ -1678,6 +2036,30 @@ function extractChannelLabels(buf, expectedChannels) {
 function parseSamplingRate(t) {
   const m = t.match(/SamplingRate\s*=\s*([0-9.]+)/);
   return m ? parseFloat(m[1]) : null;
+}
+
+function parseHdrWavelengths(t) {
+  const match = String(t || "").match(/Wavelengths\s*=\s*"([^"]+)"/i);
+  if (!match) return [];
+  return match[1]
+    .split(/\s+/)
+    .map(Number)
+    .filter(Number.isFinite);
+}
+
+function parseHdrChannelDistancesMm(t) {
+  const match = String(t || "").match(/ChanDis\s*=\s*"([^"]+)"/i);
+  if (!match) return [];
+  return match[1]
+    .split(/\s+/)
+    .map(Number)
+    .filter(Number.isFinite);
+}
+
+function normalizeNumericList(values, count, fallbackValue) {
+  const out = Array.isArray(values) ? values.slice(0, Math.max(0, count)) : [];
+  while (out.length < count) out.push(fallbackValue);
+  return out;
 }
 
 function parseMatrix(t, expectedColumns) {
@@ -2001,13 +2383,23 @@ function initPlotLayout() {
   trimPanel.appendChild(trimPlotHeaderEl);
   trimPanel.appendChild(canvasTrim);
 
+  const physPanel = document.createElement("div");
+  physPanel.className = "plot-panel";
+  physPlotHeaderEl = document.createElement("div");
+  physPlotHeaderEl.className = "plot-header";
+  physPlotHeaderEl.textContent = "Physiology";
+  physPanel.appendChild(physPlotHeaderEl);
+  physPanel.appendChild(canvasPhys);
+
   rawPanelEl = rawPanel;
   trimPanelEl = trimPanel;
+  physPanelEl = physPanel;
   plotScrollerEl = createPlotScroller();
 
   plotGrid.innerHTML = "";
   plotGrid.appendChild(rawPanel);
   plotGrid.appendChild(trimPanel);
+  plotGrid.appendChild(physPanel);
   if (plotScrollerHost) {
     plotScrollerHost.textContent = "";
     plotScrollerHost.appendChild(plotScrollerEl);
@@ -2042,6 +2434,9 @@ function createPlotScroller() {
 }
 
 function computeStats(series) {
+  if (!Array.isArray(series) || !series.length) {
+    return { mean: 0, median: 0, sd: 0, min: 0, max: 0 };
+  }
   const sorted = series.slice().sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
@@ -2058,6 +2453,72 @@ function formatStats(s) {
     " | sd " + formatMetricNumber(s.sd) +
     " | min " + formatMetricNumber(s.min) +
     " | max " + formatMetricNumber(s.max);
+}
+
+function summarizeStageSeries(label, series, unitSuffix) {
+  if (!Array.isArray(series) || !series.length) return label + ": no data";
+  const stats = computeStats(series);
+  const unit = unitSuffix ? " " + unitSuffix : "";
+  return label + ": sd " + formatMetricNumber(stats.sd) + unit + " | range " + formatMetricNumber(stats.min) + " to " + formatMetricNumber(stats.max) + unit;
+}
+
+function renderStageSummary(model) {
+  if (!stageSummaryHost) return;
+  if (!model) {
+    stageSummaryHost.innerHTML = "";
+    return;
+  }
+
+  const channelDistance = model.mbllConfig ? model.mbllConfig.distanceMm : DEFAULT_CHANNEL_DISTANCE_MM;
+  const distanceSource = model.mbllConfig ? model.mbllConfig.distanceSource : "default";
+  const mbllDetails = (model.hbWindowed && model.hbWindowed.hbo && model.hbWindowed.hbo.series.length)
+    ? [
+        summarizeStageSeries("HbO", model.hbWindowed.hbo.series, "uM"),
+        summarizeStageSeries("HbR", model.hbWindowed.hbr.series, "uM"),
+        summarizeStageSeries("HbT", model.hbWindowed.hbt.series, "uM")
+      ].join("<br>")
+    : escapeHtml(model.mbllConfig && model.mbllConfig.reason ? model.mbllConfig.reason : "Hemoglobin conversion unavailable.");
+
+  const cards = [
+    {
+      title: "1. Intensity",
+      formula: escapeHtml(getWavelengthLabel(0) + " + " + getWavelengthLabel(1) + " raw light levels"),
+      detail: [
+        summarizeStageSeries(getWavelengthLabel(0), model.intensityWindowedWl1.series, "a.u."),
+        summarizeStageSeries(getWavelengthLabel(1), model.intensityWindowedWl2.series, "a.u.")
+      ].join("<br>")
+    },
+    {
+      title: "2. Delta OD",
+      formula: escapeHtml("dOD = -ln(I / mean(I))"),
+      detail: [
+        summarizeStageSeries(getWavelengthLabel(0), model.deltaOdWindowedWl1.series, ""),
+        summarizeStageSeries(getWavelengthLabel(1), model.deltaOdWindowedWl2.series, "")
+      ].join("<br>")
+    },
+    {
+      title: "3. Processed dOD",
+      formula: escapeHtml(model.filterLabel + (model.trimEnabled ? " | trim on" : " | trim off")),
+      detail: [
+        summarizeStageSeries(getWavelengthLabel(0), model.processedOdWindowedWl1.series, ""),
+        summarizeStageSeries(getWavelengthLabel(1), model.processedOdWindowedWl2.series, "")
+      ].join("<br>")
+    },
+    {
+      title: "4. Relative Hb",
+      formula: escapeHtml("inv(E * rho * DPF) * dOD | rho=" + formatMetricNumber(channelDistance) + " mm (" + distanceSource + ") | DPF=" + formatMetricNumber(model.mbllConfig ? model.mbllConfig.dpf1 : DEFAULT_DPF.wl1) + "/" + formatMetricNumber(model.mbllConfig ? model.mbllConfig.dpf2 : DEFAULT_DPF.wl2)),
+      detail: mbllDetails
+    }
+  ];
+
+  stageSummaryHost.innerHTML = cards.map(card => {
+    return ""
+      + "<div class='stage-card'>"
+      + "  <div class='stage-card-title'>" + card.title + "</div>"
+      + "  <div class='stage-card-formula'>" + card.formula + "</div>"
+      + "  <div class='stage-card-detail'>" + card.detail + "</div>"
+      + "</div>";
+  }).join("");
 }
 
 function getRequestedFilterSpec() {
@@ -2215,19 +2676,17 @@ function getFilterEngine() {
 }
 
 function applyPlotMode() {
-  if (!rawPanelEl || !trimPanelEl || !plotGrid) return;
+  if (!rawPanelEl || !trimPanelEl || !physPanelEl || !plotGrid) return;
 
   const showRaw = (currentPlotMode === "both" || currentPlotMode === "raw");
   const showTrim = (currentPlotMode === "both" || currentPlotMode === "trimmed");
 
   rawPanelEl.style.display = showRaw ? "flex" : "none";
   trimPanelEl.style.display = showTrim ? "flex" : "none";
+  physPanelEl.style.display = "flex";
 
-  if (showRaw && showTrim) {
-    plotGrid.style.gridTemplateRows = "1fr 1fr";
-  } else {
-    plotGrid.style.gridTemplateRows = "1fr";
-  }
+  const visibleRows = (showRaw ? 1 : 0) + (showTrim ? 1 : 0) + 1;
+  plotGrid.style.gridTemplateRows = Array.from({ length: visibleRows }, () => "1fr").join(" ");
 }
 
 function isDcRestoreEnabled() {

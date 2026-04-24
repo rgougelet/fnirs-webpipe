@@ -72,7 +72,10 @@
   - `FuncRegistry/UserFunctions/Archive/hmrR_Intensity2OD_Nirs.m`
   - `FuncRegistry/UserFunctions/hmrR_OD2Conc.m`
   - `Example pipelines/simple_pipeline.m`
-- Intake status: `in_review`
+- Applied in repo:
+  - `app.js` intensity-to-dOD method
+  - `app.js` MBLL coefficient conventions for 760/850 nm
+- Intake status: `approved_with_adaptation`
 
 ### 8) `Huppert, 2009.pdf`
 - Source: local PDF in `references/`

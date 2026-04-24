@@ -1,10 +1,11 @@
 function drawPlot(ctx, canvas, series, samplingRate, overlays, events, title, statsLine, options = {}) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const timeOffsetSeconds = options && Number.isFinite(options.timeOffsetSeconds) ? options.timeOffsetSeconds : 0;
+  const seriesList = normalizeSeriesList(series, options);
 
   drawGrid(ctx, canvas);
-  drawAxes(ctx, canvas, series, samplingRate, timeOffsetSeconds);
-  drawSeries(ctx, canvas, series);
+  drawAxes(ctx, canvas, seriesList, samplingRate, timeOffsetSeconds);
+  drawSeries(ctx, canvas, seriesList);
 
   if (overlays && overlays.length) {
     drawOverlays(ctx, canvas, overlays, series.length, samplingRate);
@@ -14,7 +15,25 @@ function drawPlot(ctx, canvas, series, samplingRate, overlays, events, title, st
     drawEvents(ctx, canvas, events, series.length, samplingRate);
   }
 
-  drawLabels(ctx, canvas);
+  drawLabels(ctx, canvas, options && options.yLabel ? options.yLabel : "Intensity (a.u.)");
+  if (seriesList.length > 1) drawLegend(ctx, canvas, seriesList);
+}
+
+function normalizeSeriesList(series, options) {
+  if (options && Array.isArray(options.seriesList) && options.seriesList.length) {
+    return options.seriesList
+      .map(item => ({
+        label: item && item.label ? String(item.label) : "",
+        color: item && item.color ? String(item.color) : "#0f172a",
+        data: Array.isArray(item && item.data) ? item.data : []
+      }))
+      .filter(item => item.data.length);
+  }
+  return [{
+    label: "",
+    color: "#0f172a",
+    data: Array.isArray(series) ? series : []
+  }];
 }
 
 function drawGrid(ctx, canvas) {
@@ -41,7 +60,7 @@ function drawGrid(ctx, canvas) {
   }
 }
 
-function drawAxes(ctx, canvas, series, samplingRate, timeOffsetSeconds) {
+function drawAxes(ctx, canvas, seriesList, samplingRate, timeOffsetSeconds) {
   const w = canvas.width - M.left - M.right;
   const h = canvas.height - M.top - M.bottom;
 
@@ -53,14 +72,15 @@ function drawAxes(ctx, canvas, series, samplingRate, timeOffsetSeconds) {
   ctx.lineTo(M.left + w, M.top + h);
   ctx.stroke();
 
-  drawTicks(ctx, canvas, series, samplingRate, timeOffsetSeconds);
+  drawTicks(ctx, canvas, seriesList, samplingRate, timeOffsetSeconds);
 }
 
-function drawTicks(ctx, canvas, series, samplingRate, timeOffsetSeconds) {
+function drawTicks(ctx, canvas, seriesList, samplingRate, timeOffsetSeconds) {
   const w = canvas.width - M.left - M.right;
   const h = canvas.height - M.top - M.bottom;
-  const dur = series.length / samplingRate;
-  const extent = getSeriesExtent(series);
+  const primary = Array.isArray(seriesList) && seriesList.length ? seriesList[0].data : [];
+  const dur = primary.length / samplingRate;
+  const extent = getSeriesCollectionExtent(seriesList);
   const minY = extent.min;
   const maxY = extent.max;
   const yRange = maxY - minY;
@@ -89,26 +109,34 @@ function drawTicks(ctx, canvas, series, samplingRate, timeOffsetSeconds) {
   }
 }
 
-function drawSeries(ctx, canvas, series) {
+function drawSeries(ctx, canvas, seriesList) {
   const w = canvas.width - M.left - M.right;
   const h = canvas.height - M.top - M.bottom;
-  const extent = getSeriesExtent(series);
+  const extent = getSeriesCollectionExtent(seriesList);
   const minY = extent.min;
   const maxY = extent.max;
   const span = maxY - minY || 1;
 
-  ctx.strokeStyle = "#0f172a";
-  ctx.lineWidth = 1.8;
-  ctx.beginPath();
-
-  series.forEach((v, i) => {
-    const x = M.left + (i / (series.length - 1)) * w;
-    const y = M.top + h - ((v - minY) / span) * h;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+  seriesList.forEach(item => {
+    const series = item.data;
+    if (!series.length) return;
+    ctx.strokeStyle = item.color || "#0f172a";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    if (series.length === 1) {
+      const y = M.top + h - ((series[0] - minY) / span) * h;
+      ctx.moveTo(M.left, y);
+      ctx.lineTo(M.left + w, y);
+    } else {
+      series.forEach((v, i) => {
+        const x = M.left + (i / (series.length - 1)) * w;
+        const y = M.top + h - ((v - minY) / span) * h;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+    }
+    ctx.stroke();
   });
-
-  ctx.stroke();
 }
 
 function drawOverlays(ctx, canvas, intervals, nSamples, samplingRate) {
@@ -163,13 +191,24 @@ function getSeriesExtent(series) {
   return { min, max };
 }
 
+function getSeriesCollectionExtent(seriesList) {
+  const allValues = [];
+  (Array.isArray(seriesList) ? seriesList : []).forEach(item => {
+    if (item && Array.isArray(item.data) && item.data.length) {
+      allValues.push(...item.data);
+    }
+  });
+  if (!allValues.length) return { min: 0, max: 0 };
+  return getSeriesExtent(allValues);
+}
+
 function eventDisplayLabel(event) {
   if (event && typeof event.label === "string" && event.label.trim()) return event.label.trim();
   if (event && Number.isFinite(event.code)) return "E" + event.code;
   return "E?";
 }
 
-function drawLabels(ctx, canvas) {
+function drawLabels(ctx, canvas, yLabel) {
   ctx.fillStyle = "#111827";
   ctx.font = "16px sans-serif";
   ctx.textAlign = "center";
@@ -181,7 +220,40 @@ function drawLabels(ctx, canvas) {
   ctx.rotate(-Math.PI / 2);
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
-  ctx.fillText("Intensity (a.u.)", 0, 0);
+  ctx.fillText(yLabel || "Intensity (a.u.)", 0, 0);
+  ctx.restore();
+}
+
+function drawLegend(ctx, canvas, seriesList) {
+  const entries = seriesList.filter(item => item && item.label);
+  if (!entries.length) return;
+
+  const boxWidth = 126;
+  const boxHeight = 18 + entries.length * 18;
+  const x = canvas.width - M.right - boxWidth;
+  const y = M.top + 8;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.strokeStyle = "#cbd5e1";
+  ctx.lineWidth = 1;
+  ctx.fillRect(x, y, boxWidth, boxHeight);
+  ctx.strokeRect(x, y, boxWidth, boxHeight);
+  ctx.font = "13px sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+
+  entries.forEach((item, idx) => {
+    const rowY = y + 18 + idx * 18;
+    ctx.strokeStyle = item.color || "#0f172a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + 8, rowY);
+    ctx.lineTo(x + 24, rowY);
+    ctx.stroke();
+    ctx.fillStyle = "#111827";
+    ctx.fillText(item.label, x + 30, rowY);
+  });
   ctx.restore();
 }
 
@@ -212,6 +284,9 @@ function getYTickCount(minY, maxY) {
 
 
 function computeStats(series) {
+  if (!Array.isArray(series) || !series.length) {
+    return { mean: 0, median: 0, sd: 0, min: 0, max: 0 };
+  }
   const sorted = [...series].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
 

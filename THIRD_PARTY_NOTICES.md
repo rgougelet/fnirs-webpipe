@@ -23,6 +23,27 @@ This file tracks nontrivial third-party code adaptations/reuse.
 
 ## Discovered During Intake (Not Yet Reused In This Repo)
 
+### Homer3 MBLL/OD reference methods
+- Source: `references/unpacked/BUNPC-Homer3-1.87.0.0`
+- Version: `BUNPC-Homer3-1.87.0.0` ZIP snapshot imported on 2026-03-06
+- License: Homer3 Software License Agreement / BSD-2-Clause-like
+- Usage mode: `adapt_with_citation`
+- Files in this repo:
+  - `app.js`
+- Summary of reused/adapted parts:
+  - Method-level adaptation of `hmrR_Intensity2OD.m` for delta optical density
+  - Coefficient conventions and MBLL solve structure from `hmrR_OD2Conc.m`
+  - Wray-spectrum extinction values from `GetExtinctions.m`
+- Modifications made:
+  - Simplified for browser-side arrays instead of SNIRF `DataClass`
+  - Limited current coefficient table to the app's supported paired wavelengths
+  - UI surfaced DPF and source-detector distance assumptions
+- Required notices:
+  - This notice file
+  - Inline provenance comments near the adaptation points
+
+---
+
 ### GeodeticToolbox (from `ant_av_eeg-master`)
 - Source: `references/unpacked/ant_av_eeg-master/ant_av_eeg-master/deps/GeodeticToolbox`
 - Version: ZIP snapshot imported on 2026-03-04
