@@ -1,7 +1,7 @@
 // app.js
 
-const APP_VERSION = "0.3.0";
-const APP_LAST_UPDATED = "2026-04-24 11:55 EDT";
+const APP_VERSION = "0.3.1";
+const APP_LAST_UPDATED = "2026-05-01 11:01 EDT";
 const PROTOCOL_SCHEMA_VERSION = 1;
 
 const input = document.getElementById("input");
@@ -2467,7 +2467,7 @@ function computeStats(series) {
 function formatStats(s) {
   return "mean " + formatMetricNumber(s.mean) +
     " | median " + formatMetricNumber(s.median) +
-    " | sd " + formatMetricNumber(s.sd) +
+    " | sd " + formatStandardDeviation(s.sd) +
     " | min " + formatMetricNumber(s.min) +
     " | max " + formatMetricNumber(s.max);
 }
@@ -2476,7 +2476,7 @@ function summarizeStageSeries(label, series, unitSuffix) {
   if (!Array.isArray(series) || !series.length) return label + ": no data";
   const stats = computeStats(series);
   const unit = unitSuffix ? " " + unitSuffix : "";
-  return label + ": sd " + formatMetricNumber(stats.sd) + unit + " | range " + formatMetricNumber(stats.min) + " to " + formatMetricNumber(stats.max) + unit;
+  return label + ": sd " + formatStandardDeviation(stats.sd) + unit + " | range " + formatMetricNumber(stats.min) + " to " + formatMetricNumber(stats.max) + unit;
 }
 
 function renderStageSummary(model) {
@@ -2737,4 +2737,12 @@ function formatMetricNumber(v) {
   const abs = Math.abs(v);
   if (abs < 0.005) return v.toExponential(2);
   return v.toFixed(2);
+}
+
+function formatStandardDeviation(v) {
+  if (!Number.isFinite(v)) return "NaN";
+  if (v === 0) return "0.000";
+  const abs = Math.abs(v);
+  if (abs < 0.0005) return v.toExponential(2);
+  return v.toFixed(3);
 }
