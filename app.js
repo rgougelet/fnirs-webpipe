@@ -1,7 +1,7 @@
 // app.js
 
-const APP_VERSION = "0.3.1";
-const APP_LAST_UPDATED = "2026-05-01 11:01 EDT";
+const APP_VERSION = "0.3.2";
+const APP_LAST_UPDATED = "2026-05-01 11:05 EDT";
 const PROTOCOL_SCHEMA_VERSION = 1;
 
 const input = document.getElementById("input");
@@ -2465,18 +2465,18 @@ function computeStats(series) {
 }
 
 function formatStats(s) {
-  return "mean " + formatMetricNumber(s.mean) +
-    " | median " + formatMetricNumber(s.median) +
-    " | sd " + formatStandardDeviation(s.sd) +
-    " | min " + formatMetricNumber(s.min) +
-    " | max " + formatMetricNumber(s.max);
+  return "mean " + formatStatisticNumber(s.mean) +
+    " | median " + formatStatisticNumber(s.median) +
+    " | sd " + formatStatisticNumber(s.sd) +
+    " | min " + formatStatisticNumber(s.min) +
+    " | max " + formatStatisticNumber(s.max);
 }
 
 function summarizeStageSeries(label, series, unitSuffix) {
   if (!Array.isArray(series) || !series.length) return label + ": no data";
   const stats = computeStats(series);
   const unit = unitSuffix ? " " + unitSuffix : "";
-  return label + ": sd " + formatStandardDeviation(stats.sd) + unit + " | range " + formatMetricNumber(stats.min) + " to " + formatMetricNumber(stats.max) + unit;
+  return label + ": sd " + formatStatisticNumber(stats.sd) + unit + " | range " + formatStatisticNumber(stats.min) + " to " + formatStatisticNumber(stats.max) + unit;
 }
 
 function renderStageSummary(model) {
@@ -2745,4 +2745,10 @@ function formatStandardDeviation(v) {
   const abs = Math.abs(v);
   if (abs < 0.0005) return v.toExponential(2);
   return v.toFixed(3);
+}
+
+function formatStatisticNumber(v) {
+  if (!Number.isFinite(v)) return "NaN";
+  if (v === 0) return "0.000e+0";
+  return v.toExponential(3);
 }
