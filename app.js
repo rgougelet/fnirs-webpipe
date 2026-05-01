@@ -1,7 +1,7 @@
 // app.js
 
-const APP_VERSION = "0.4.0";
-const APP_LAST_UPDATED = "2026-05-01 10:30 EDT";
+const APP_VERSION = "0.3.0";
+const APP_LAST_UPDATED = "2026-04-24 11:55 EDT";
 const PROTOCOL_SCHEMA_VERSION = 1;
 
 const input = document.getElementById("input");
@@ -59,12 +59,6 @@ let currentChannel = 0;
 let viewWindowSecondsInput = null;
 let viewOffsetSlider = null;
 let viewOffsetSummaryEl = null;
-let pipelineNavHost = null;
-let pipelinePanelHost = null;
-let stepGuideEl = null;
-let eventOrganizationContentEl = null;
-let activePipelineStep = "load";
-let eventLabelOverrides = {};
 
 let exclusionTable = null;
 let lowCutEnabled = true;
@@ -73,10 +67,6 @@ let lowCutInput = null;
 let highCutInput = null;
 let lowCutSixDbInput = null;
 let highCutSixDbInput = null;
-let lowCutSlider = null;
-let highCutSlider = null;
-let lowCutSixDbSlider = null;
-let highCutSixDbSlider = null;
 let lowToggleBtn = null;
 let highToggleBtn = null;
 let filterEngineSelect = null;
@@ -139,7 +129,6 @@ const DEFAULT_DPF = {
   wl1: 6.0,
   wl2: 6.0
 };
-const FILTER_SNAP_HZ = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 12.5, 15, 20];
 // Extinction coefficients below match Homer3 GetExtinctions default spectrum
 // (Wray et al., 1988) at 760/850 nm after 2.303 scaling. Values are stored in
 // [(1/cm)/(mmol/L)] so the MBLL solve returns mmol/L before conversion to uM.
@@ -245,7 +234,6 @@ function resetAllState() {
   channelLabelSource = "default";
   channelDistancesMm = [];
   wavelengthsNm = [760, 850];
-  eventLabelOverrides = {};
 
   currentWavelength = "wl1";
   currentChannel = 0;
@@ -531,13 +519,6 @@ function buildControls() {
   importDiv.appendChild(importHelp);
   importDiv.appendChild(metaDiv);
 
-  const createLockedStepNote = (message) => {
-    const note = document.createElement("div");
-    note.className = "pipeline-empty-note";
-    note.textContent = message;
-    return note;
-  };
-
   const wlDiv = document.createElement("div");
   wlDiv.className = "pt-2 flex flex-col gap-2";
   const wlRow = document.createElement("div");
@@ -595,8 +576,8 @@ function buildControls() {
     chDiv.appendChild(row);
   });
 
-  const transformDiv = document.createElement("div");
-  transformDiv.className = "pt-2 flex flex-col gap-2";
+  const pipelineDiv = document.createElement("div");
+  pipelineDiv.className = "pt-2 flex flex-col gap-2";
 
   const domainRow = document.createElement("div");
   domainRow.className = "grid grid-cols-[auto_1fr] gap-2 items-center";
@@ -619,6 +600,9 @@ function buildControls() {
   };
   domainRow.appendChild(domainLbl);
   domainRow.appendChild(signalDomainSelect);
+
+  const flagsRow = document.createElement("div");
+  flagsRow.className = "grid grid-cols-2 gap-2";
 
   const filterMasterRow = document.createElement("label");
   filterMasterRow.className = "inline-flex items-center gap-2 text-sm";
@@ -650,11 +634,12 @@ function buildControls() {
   trimMasterRow.appendChild(trimStepCheckbox);
   trimMasterRow.appendChild(document.createTextNode("Enable trim"));
 
+  flagsRow.appendChild(filterMasterRow);
+  flagsRow.appendChild(trimMasterRow);
+
   pipelineSummaryEl = document.createElement("div");
   pipelineSummaryEl.className = "text-xs text-slate-600 leading-tight";
 
-  const physiologyDiv = document.createElement("div");
-  physiologyDiv.className = "pt-2 flex flex-col gap-2";
   const physiologyRow = document.createElement("div");
   physiologyRow.className = "grid grid-cols-[auto_auto_68px_auto_68px] gap-2 items-center";
   const physiologyLbl = document.createElement("div");
@@ -696,10 +681,11 @@ function buildControls() {
   physiologyNote.className = "text-xs text-slate-600 leading-tight";
   physiologyNote.textContent = "Derived physiology uses delta OD at both wavelengths and channel distance from the NIRx header to estimate relative HbO/HbR/HbT.";
 
-  transformDiv.appendChild(domainRow);
-  transformDiv.appendChild(pipelineSummaryEl);
-  physiologyDiv.appendChild(physiologyRow);
-  physiologyDiv.appendChild(physiologyNote);
+  pipelineDiv.appendChild(domainRow);
+  pipelineDiv.appendChild(flagsRow);
+  pipelineDiv.appendChild(physiologyRow);
+  pipelineDiv.appendChild(physiologyNote);
+  pipelineDiv.appendChild(pipelineSummaryEl);
 
   const exDiv = document.createElement("div");
   exDiv.className = "pt-2 flex flex-col space-y-2";
@@ -720,7 +706,7 @@ function buildControls() {
   lowCutInput.inputMode = "decimal";
   lowCutInput.placeholder = "1.0";
   lowCutInput.title = "Lower in-band edge in Hz. In [0.5 1 9 9.5] with shape [0 1 1 0], this is the second value where gain reaches the flat in-band region.";
-  lowCutInput.oninput = () => { syncFilterControlsFromInputs(); redraw(); renderMeta(); };
+  lowCutInput.oninput = () => { redraw(); renderMeta(); };
   lowCutInput.className = "p-2 border rounded bg-white w-full";
   lowCutInput.value = "0.1";
   const lowLbl = document.createElement("div");
@@ -731,21 +717,9 @@ function buildControls() {
   lowCutSixDbInput.inputMode = "decimal";
   lowCutSixDbInput.placeholder = "0.05";
   lowCutSixDbInput.title = "Lower stop edge in Hz. In [0.5 1 9 9.5] with shape [0 1 1 0], this is the first value on the rise into the in-band region.";
-  lowCutSixDbInput.oninput = () => { syncFilterControlsFromInputs(); redraw(); renderMeta(); };
+  lowCutSixDbInput.oninput = () => { redraw(); renderMeta(); };
   lowCutSixDbInput.className = "p-2 border rounded bg-white w-full";
   lowCutSixDbInput.value = "0.05";
-  lowCutSixDbSlider = createFrequencySlider(lowCutSixDbInput.value, "Lower stop edge");
-  lowCutSixDbSlider.oninput = () => {
-    lowCutSixDbInput.value = String(sliderIndexToHz(lowCutSixDbSlider.value));
-    redraw();
-    renderMeta();
-  };
-  lowCutSlider = createFrequencySlider(lowCutInput.value, "Lower pass edge");
-  lowCutSlider.oninput = () => {
-    lowCutInput.value = String(sliderIndexToHz(lowCutSlider.value));
-    redraw();
-    renderMeta();
-  };
   const lowSixDbLbl = document.createElement("div");
   lowSixDbLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
   lowSixDbLbl.textContent = "Stop low (-6 dB):";
@@ -760,13 +734,11 @@ function buildControls() {
     renderMeta();
   };
   const lowRow = document.createElement("div");
-  lowRow.className = "filter-grid-row";
+  lowRow.className = "grid grid-cols-[auto_72px_auto_72px_auto] gap-2 items-center";
   lowRow.appendChild(lowSixDbLbl);
   lowRow.appendChild(lowCutSixDbInput);
-  lowRow.appendChild(lowCutSixDbSlider);
   lowRow.appendChild(lowLbl);
   lowRow.appendChild(lowCutInput);
-  lowRow.appendChild(lowCutSlider);
   lowRow.appendChild(lowToggleBtn);
 
   highCutInput = document.createElement("input");
@@ -774,7 +746,7 @@ function buildControls() {
   highCutInput.inputMode = "decimal";
   highCutInput.placeholder = "9.0";
   highCutInput.title = "Upper in-band edge in Hz. In [0.5 1 9 9.5] with shape [0 1 1 0], this is the third value where the flat in-band region ends.";
-  highCutInput.oninput = () => { syncFilterControlsFromInputs(); redraw(); renderMeta(); };
+  highCutInput.oninput = () => { redraw(); renderMeta(); };
   highCutInput.className = "p-2 border rounded bg-white w-full";
   highCutInput.value = "10.0";
   const highLbl = document.createElement("div");
@@ -785,21 +757,9 @@ function buildControls() {
   highCutSixDbInput.inputMode = "decimal";
   highCutSixDbInput.placeholder = "12.5";
   highCutSixDbInput.title = "Upper stop edge in Hz. In [0.5 1 9 9.5] with shape [0 1 1 0], this is the fourth value on the fall out of the in-band region.";
-  highCutSixDbInput.oninput = () => { syncFilterControlsFromInputs(); redraw(); renderMeta(); };
+  highCutSixDbInput.oninput = () => { redraw(); renderMeta(); };
   highCutSixDbInput.className = "p-2 border rounded bg-white w-full";
   highCutSixDbInput.value = "12.5";
-  highCutSlider = createFrequencySlider(highCutInput.value, "Upper pass edge");
-  highCutSlider.oninput = () => {
-    highCutInput.value = String(sliderIndexToHz(highCutSlider.value));
-    redraw();
-    renderMeta();
-  };
-  highCutSixDbSlider = createFrequencySlider(highCutSixDbInput.value, "Upper stop edge");
-  highCutSixDbSlider.oninput = () => {
-    highCutSixDbInput.value = String(sliderIndexToHz(highCutSixDbSlider.value));
-    redraw();
-    renderMeta();
-  };
   const highSixDbLbl = document.createElement("div");
   highSixDbLbl.className = "text-xs text-slate-600 font-semibold whitespace-nowrap";
   highSixDbLbl.textContent = "Stop high (-6 dB):";
@@ -814,13 +774,11 @@ function buildControls() {
     renderMeta();
   };
   const highRow = document.createElement("div");
-  highRow.className = "filter-grid-row";
+  highRow.className = "grid grid-cols-[auto_72px_auto_72px_auto] gap-2 items-center";
   highRow.appendChild(highLbl);
   highRow.appendChild(highCutInput);
-  highRow.appendChild(highCutSlider);
   highRow.appendChild(highSixDbLbl);
   highRow.appendChild(highCutSixDbInput);
-  highRow.appendChild(highCutSixDbSlider);
   highRow.appendChild(highToggleBtn);
 
   const dcRow = document.createElement("div");
@@ -915,176 +873,35 @@ function buildControls() {
   notesInput.style.resize = "vertical";
   notesInput.className = "p-2 border rounded bg-white w-full text-sm";
   notesDiv.appendChild(notesInput);
-  const filterIntro = document.createElement("div");
-  filterIntro.className = "text-xs text-slate-600 leading-tight";
-  filterIntro.textContent = "Use sliders to explore meaningful cutoff values, then fine-tune the exact numbers beside them.";
-  const filterStepDiv = document.createElement("div");
-  filterStepDiv.className = "pt-2 flex flex-col gap-2";
-  filterStepDiv.appendChild(filterMasterRow);
-  filterStepDiv.appendChild(filterIntro);
-  filterStepDiv.appendChild(fDiv);
 
-  const trimStepDiv = document.createElement("div");
-  trimStepDiv.className = "pt-2 flex flex-col gap-2";
-  const trimNote = document.createElement("div");
-  trimNote.className = "text-xs text-slate-600 leading-tight";
-  trimNote.textContent = "Excluded intervals are removed from downstream filtered traces and hemoglobin estimates.";
-  trimStepDiv.appendChild(trimMasterRow);
-  trimStepDiv.appendChild(trimNote);
-  trimStepDiv.appendChild(exDiv);
-
-  recordingSummaryContentEl = document.createElement("div");
-  recordingSummaryContentEl.className = "pt-2";
-  fileSourcesContentEl = document.createElement("div");
-  fileSourcesContentEl.className = "pt-2";
-  eventsContentEl = document.createElement("div");
-  eventsContentEl.className = "pt-2";
-  eventOrganizationContentEl = document.createElement("div");
-  eventOrganizationContentEl.className = "pt-2 flex flex-col gap-2";
-
-  pipelineNavHost = document.createElement("div");
-  pipelineNavHost.className = "pipeline-nav";
-  pipelinePanelHost = document.createElement("div");
-  pipelinePanelHost.className = "pipeline-panels";
-
-  const pipelineShell = document.createElement("div");
-  pipelineShell.className = "pipeline-shell";
-  pipelineShell.appendChild(pipelineNavHost);
-  pipelineShell.appendChild(pipelinePanelHost);
-
-  const datasetLoaded = !!(data.wl1 && samplingRate);
-  if (!datasetLoaded) activePipelineStep = "load";
-
-  renderEventOrganizationPanel();
-
-  const stepDefs = [
-    {
-      id: "load",
-      indexLabel: "1",
-      shortTitle: "Load",
-      navBlurb: "Import and verify the raw recording.",
-      title: "1. Load Data",
-      blurb: "Import raw NIRx measurements and confirm the recording geometry before processing.",
-      visibleNow: datasetLoaded
-        ? "Dataset identity, file presence, sampling rate, and channel count."
-        : "Import controls and the processing path that will unlock after loading.",
-      savedState: "Source file references and the selected dataset label.",
-      content: datasetLoaded
-        ? [importDiv, actionsDiv, recordingSummaryContentEl]
-        : [importDiv, actionsDiv, createLockedStepNote("Load a NIRx ZIP or file set to unlock inspection, event curation, filtering, trimming, and physiology steps.")]
-    },
-    {
-      id: "inspect",
-      indexLabel: "2",
-      shortTitle: "Inspect",
-      navBlurb: "Choose the raw signal you want to inspect.",
-      title: "2. Inspect Raw Signal",
-      blurb: "Pick wavelength, channel, and time window to inspect the raw measurement before changing it.",
-      visibleNow: "The left plots update to the chosen channel and wavelength immediately.",
-      savedState: "Channel, wavelength, and plot window context in the saved protocol.",
-      disabled: !datasetLoaded,
-      content: datasetLoaded
-        ? [wlDiv, chDiv, viewCard]
-        : [createLockedStepNote("This step becomes active once a dataset is loaded.")]
-    },
-    {
-      id: "events",
-      indexLabel: "3",
-      shortTitle: "Events",
-      navBlurb: "Decode and organize event markers.",
-      title: "3. Event Organization",
-      blurb: "Review how raw marker fields become named events that appear on plots and later define analysis structure.",
-      visibleNow: "Marker counts, decoded labels, and event timing structure used on the plots.",
-      savedState: "Event label overrides and marker interpretation choices.",
-      disabled: !datasetLoaded,
-      content: datasetLoaded
-        ? [eventOrganizationContentEl, eventsContentEl]
-        : [createLockedStepNote("Load a dataset to review marker codes, rename events, and verify structure.")]
-    },
-    {
-      id: "transform",
-      indexLabel: "4",
-      shortTitle: "Transform",
-      navBlurb: "Move from intensity to delta OD.",
-      title: "4. Optical Density Transform",
-      blurb: "Convert raw light intensity into delta optical density so wavelength pairs can be compared meaningfully.",
-      visibleNow: "Raw-vs-processed signal domain changes on the left plots.",
-      savedState: "The selected signal domain and transform step in the protocol.",
-      disabled: !datasetLoaded,
-      content: datasetLoaded
-        ? [transformDiv]
-        : [createLockedStepNote("Load a dataset to inspect intensity and delta OD side by side.")]
-    },
-    {
-      id: "filter",
-      indexLabel: "5",
-      shortTitle: "Filter",
-      navBlurb: "Set the spectral band of interest.",
-      title: "5. Filtering",
-      blurb: "Shape the signal band by sliding cutoff edges through meaningful values, then refine with exact numeric entry.",
-      visibleNow: "The filtered panel shows how the bandpass changes the trace.",
-      savedState: "Filter edges, padding, DC restore, and enable state.",
-      disabled: !datasetLoaded,
-      content: datasetLoaded
-        ? [filterStepDiv]
-        : [createLockedStepNote("Load a dataset to explore cutoff sliders and validate the usable time scale.")]
-    },
-    {
-      id: "trim",
-      indexLabel: "6",
-      shortTitle: "Trim",
-      navBlurb: "Remove intervals you do not trust.",
-      title: "6. Trim and Exclude",
-      blurb: "Mark segments to exclude so they no longer contribute to processed traces or physiology.",
-      visibleNow: "Excluded intervals are shaded and removed downstream.",
-      savedState: "Interval boundaries and trim enable state.",
-      disabled: !datasetLoaded,
-      content: datasetLoaded
-        ? [trimStepDiv]
-        : [createLockedStepNote("Load a dataset to mark motion-contaminated or otherwise unusable intervals.")]
-    },
-    {
-      id: "physiology",
-      indexLabel: "7",
-      shortTitle: "Physiology",
-      navBlurb: "Set the hemoglobin assumptions.",
-      title: "7. Derive Physiology",
-      blurb: "Use paired wavelengths, channel distance, and DPF assumptions to estimate relative HbO and HbR.",
-      visibleNow: "The right-column HbO and HbR panels update with the current assumptions.",
-      savedState: "MBLL wavelengths, DPF values, and distance assumptions.",
-      disabled: !datasetLoaded,
-      content: datasetLoaded
-        ? [physiologyDiv]
-        : [createLockedStepNote("Load a dataset to derive relative HbO and HbR from paired wavelengths.")]
-    },
-    {
-      id: "review",
-      indexLabel: "8",
-      shortTitle: "Review",
-      navBlurb: "Confirm what will be saved.",
-      title: "8. Review and Save",
-      blurb: "Review the entire processing chain, provenance, notes, and protocol summary before saving or exporting.",
-      visibleNow: "Protocol summary, file provenance, and user notes.",
-      savedState: "The complete protocol object and notes.",
-      disabled: !datasetLoaded,
-      content: datasetLoaded
-        ? [protocolDiv, fileSourcesContentEl, notesDiv]
-        : [createLockedStepNote("Load a dataset to review provenance, notes, and the saved protocol summary.")]
-    }
-  ];
-
-  stepDefs.forEach(def => {
-    pipelineNavHost.appendChild(createPipelineNavButton(def));
-    pipelinePanelHost.appendChild(createPipelineStepPanel(def, def.content));
-  });
-
-  controls.appendChild(pipelineShell);
+  const accordionStack = document.createElement("div");
+  accordionStack.className = "flex flex-col gap-2";
+  accordionStack.appendChild(createAccordionSection("Import", importDiv, true));
+  accordionStack.appendChild(createAccordionSection("Actions", actionsDiv, false));
+  accordionStack.appendChild(createAccordionSection("Protocol", protocolDiv, false));
+  accordionStack.appendChild(createAccordionSection("Plot View", viewCard, false));
+  if (data.wl1) {
+    recordingSummaryContentEl = document.createElement("div");
+    recordingSummaryContentEl.className = "pt-2";
+    fileSourcesContentEl = document.createElement("div");
+    fileSourcesContentEl.className = "pt-2";
+    eventsContentEl = document.createElement("div");
+    eventsContentEl.className = "pt-2";
+    accordionStack.appendChild(createAccordionSection("Recording Summary", recordingSummaryContentEl, true));
+    accordionStack.appendChild(createAccordionSection("File Sources", fileSourcesContentEl, false));
+    accordionStack.appendChild(createAccordionSection("Events", eventsContentEl, false));
+    accordionStack.appendChild(createAccordionSection("Wavelength", wlDiv, true));
+    accordionStack.appendChild(createAccordionSection("Channel", chDiv, true));
+    accordionStack.appendChild(createAccordionSection("Pipeline", pipelineDiv, false));
+    accordionStack.appendChild(createAccordionSection("Filter", fDiv, true));
+    accordionStack.appendChild(createAccordionSection("Cut Intervals", exDiv, false));
+    accordionStack.appendChild(createAccordionSection("Notes", notesDiv, false));
+  }
+  controls.appendChild(accordionStack);
   rebuildRadioSelections();
   updateFilterToggleButtons();
   updatePipelineSummary();
   updateViewNavigationUi(getReferenceDurationSeconds());
-  syncFilterControlsFromInputs();
-  setActivePipelineStep(activePipelineStep);
 }
 
 function createAccordionSection(title, contentEl, openByDefault) {
@@ -1097,81 +914,6 @@ function createAccordionSection(title, contentEl, openByDefault) {
   detail.appendChild(summary);
   detail.appendChild(contentEl);
   return detail;
-}
-
-function createPipelineStepPanel(definition, contentNodes) {
-  const panel = document.createElement("div");
-  panel.className = "pipeline-step-panel";
-  panel.dataset.stepPanel = definition.id;
-
-  const header = document.createElement("div");
-  header.className = "pipeline-step-header";
-
-  const title = document.createElement("div");
-  title.className = "pipeline-step-title";
-  title.textContent = definition.title;
-
-  const blurb = document.createElement("div");
-  blurb.className = "pipeline-step-blurb";
-  blurb.textContent = definition.blurb;
-
-  const summary = document.createElement("div");
-  summary.className = "pipeline-step-summary";
-  summary.innerHTML = ""
-    + "<div><span class='pipeline-step-summary-label'>Visible now</span>" + escapeHtml(definition.visibleNow) + "</div>"
-    + "<div><span class='pipeline-step-summary-label'>Saved</span>" + escapeHtml(definition.savedState) + "</div>";
-
-  header.appendChild(title);
-  header.appendChild(blurb);
-  header.appendChild(summary);
-  panel.appendChild(header);
-
-  const body = document.createElement("div");
-  body.className = "pipeline-step-body";
-  contentNodes.forEach(node => {
-    if (node) body.appendChild(node);
-  });
-  panel.appendChild(body);
-  return panel;
-}
-
-function setActivePipelineStep(stepId) {
-  const requestedStep = stepId || "load";
-  const availableButtons = pipelineNavHost
-    ? Array.from(pipelineNavHost.querySelectorAll("[data-step-nav]"))
-    : [];
-  const requestedButton = availableButtons.find(btn => btn.dataset.stepNav === requestedStep);
-  const fallbackButton = availableButtons.find(btn => !btn.disabled);
-  activePipelineStep = requestedButton && !requestedButton.disabled
-    ? requestedStep
-    : (fallbackButton ? fallbackButton.dataset.stepNav : "load");
-  if (pipelineNavHost) {
-    pipelineNavHost.querySelectorAll("[data-step-nav]").forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.stepNav === activePipelineStep);
-    });
-  }
-  if (pipelinePanelHost) {
-    pipelinePanelHost.querySelectorAll("[data-step-panel]").forEach(panel => {
-      panel.style.display = panel.dataset.stepPanel === activePipelineStep ? "flex" : "none";
-    });
-  }
-  redraw();
-}
-
-function createPipelineNavButton(definition) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "pipeline-nav-btn";
-  button.dataset.stepNav = definition.id;
-  button.disabled = !!definition.disabled;
-  button.innerHTML = ""
-    + "<div class='pipeline-nav-index'>" + escapeHtml(definition.indexLabel) + "</div>"
-    + "<div class='pipeline-nav-copy'>"
-    + "  <div class='pipeline-nav-title'>" + escapeHtml(definition.shortTitle) + "</div>"
-    + "  <div class='pipeline-nav-blurb'>" + escapeHtml(definition.navBlurb) + "</div>"
-    + "</div>";
-  button.onclick = () => setActivePipelineStep(definition.id);
-  return button;
 }
 
 function updateProtocolFilenameLabel() {
@@ -1352,7 +1094,6 @@ function resetProtocolUiOnly() {
   if (signalDomainSelect) signalDomainSelect.value = "intensity";
   if (dpfWl1Input) dpfWl1Input.value = String(DEFAULT_DPF.wl1);
   if (dpfWl2Input) dpfWl2Input.value = String(DEFAULT_DPF.wl2);
-  syncFilterControlsFromInputs();
   filterStepEnabled = true;
   trimStepEnabled = true;
   amplitudePreservationMode = "none";
@@ -1664,8 +1405,6 @@ function renderMeta() {
     + eventRows
     + "  </tbody>"
     + "</table>";
-
-  renderEventOrganizationPanel();
 }
 
 /* ================= Protocol object, export, import ================= */
@@ -1681,16 +1420,6 @@ function buildProtocolObject() {
   const mbllConfig = getCurrentMbllConfig();
 
   const steps = [];
-
-  steps.push({
-    step: "organize_events",
-    enabled: true,
-    labelOverrides: Object.fromEntries(
-      Object.entries(eventLabelOverrides)
-        .map(([key, value]) => [String(key), String(value || "").trim()])
-        .filter(([, value]) => value)
-    )
-  });
 
   steps.push({
     step: "transform_intensity_to_od",
@@ -1776,10 +1505,6 @@ function buildProtocolSummary(protocol) {
   const labelPart = label ? ("label=" + label + " | ") : "";
   const t = (protocol.steps || []).find(s => s.step === "transform_intensity_to_od");
   const domainPart = (t && t.enabled) ? "domain=delta_od" : "domain=intensity";
-  const eventStep = (protocol.steps || []).find(s => s.step === "organize_events");
-  const eventPart = eventStep && eventStep.labelOverrides && Object.keys(eventStep.labelOverrides).length
-    ? ("events=" + Object.keys(eventStep.labelOverrides).length + "_labels")
-    : "events=default";
 
   let trimPart = "trim=none";
   const trimStep = (protocol.steps || []).find(s => s.step === "trim");
@@ -1825,7 +1550,7 @@ function buildProtocolSummary(protocol) {
     physiologyPart = "hb=mbll dpf[" + dpf + "]";
   }
 
-  return labelPart + "wl=" + wlTxt + " | ch=" + chLbl + " | " + eventPart + " | " + domainPart + " | " + filterPart + " | " + trimPart + " | " + physiologyPart;
+  return labelPart + "wl=" + wlTxt + " | ch=" + chLbl + " | " + domainPart + " | " + filterPart + " | " + trimPart + " | " + physiologyPart;
 }
 
 function exportProtocol() {
@@ -1886,10 +1611,6 @@ function applyProtocol(protocol) {
   const sel = p.selection || {};
   const wl = sel.wavelength === "wl2" ? "wl2" : "wl1";
   const ch = Number.isFinite(Number(sel.channelIndex)) ? Number(sel.channelIndex) : 0;
-  const eventStep = (p.steps || []).find(s => s.step === "organize_events");
-  eventLabelOverrides = eventStep && eventStep.labelOverrides && typeof eventStep.labelOverrides === "object"
-    ? Object.fromEntries(Object.entries(eventStep.labelOverrides).map(([key, value]) => [String(Number(key)), String(value || "").trim()]).filter(([, value]) => value))
-    : {};
 
   currentWavelength = wl;
   currentChannel = ch;
@@ -1962,11 +1683,10 @@ function applyProtocol(protocol) {
     amplitudePreservationMode = "none";
   }
   if (filterStepCheckbox) filterStepCheckbox.checked = filterStepEnabled;
+  if (plotModeSelect) plotModeSelect.value = requestedPlotView;
   setPlotMode(requestedPlotView);
   updateFilterToggleButtons();
   updatePipelineSummary();
-  renderEventOrganizationPanel();
-  syncFilterControlsFromInputs();
 
   rebuildRadioSelections();
   renderMeta();
@@ -2064,7 +1784,6 @@ function normalizeProtocol(raw) {
   if (!out.steps.length) {
     out.steps = [
       { step: "transform_intensity_to_od", enabled: false, output: "delta_od" },
-      { step: "organize_events", enabled: true, labelOverrides: {} },
       {
         step: "filter_butterworth_iir",
         enabled: false,
@@ -2103,19 +1822,6 @@ function normalizeProtocol(raw) {
   }
   transform.enabled = !!transform.enabled;
   transform.output = "delta_od";
-
-  let eventStep = out.steps.find(s => s.step === "organize_events");
-  if (!eventStep) {
-    eventStep = { step: "organize_events", enabled: true, labelOverrides: {} };
-    out.steps.unshift(eventStep);
-  }
-  eventStep.enabled = true;
-  if (!eventStep.labelOverrides || typeof eventStep.labelOverrides !== "object") eventStep.labelOverrides = {};
-  eventStep.labelOverrides = Object.fromEntries(
-    Object.entries(eventStep.labelOverrides)
-      .map(([key, value]) => [String(key), String(value || "").trim()])
-      .filter(([, value]) => value)
-  );
 
   const trim = out.steps.find(s => s.step === "trim");
   if (trim) {
@@ -2221,49 +1927,6 @@ function numberOrNull(v) {
 
 function formatHz(v) {
   return v === null || !Number.isFinite(Number(v)) ? "?" : String(Number(v));
-}
-
-function findNearestSnapHz(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric <= 0) return FILTER_SNAP_HZ[0];
-  return FILTER_SNAP_HZ.reduce((best, candidate) => {
-    return Math.abs(candidate - numeric) < Math.abs(best - numeric) ? candidate : best;
-  }, FILTER_SNAP_HZ[0]);
-}
-
-function hzToSliderIndex(value) {
-  const nearest = findNearestSnapHz(value);
-  return Math.max(0, FILTER_SNAP_HZ.indexOf(nearest));
-}
-
-function sliderIndexToHz(index) {
-  const safe = Math.max(0, Math.min(FILTER_SNAP_HZ.length - 1, Number(index) || 0));
-  return FILTER_SNAP_HZ[safe];
-}
-
-function createFrequencySlider(initialValue, label) {
-  const slider = document.createElement("input");
-  slider.type = "range";
-  slider.min = "0";
-  slider.max = String(FILTER_SNAP_HZ.length - 1);
-  slider.step = "1";
-  slider.value = String(hzToSliderIndex(initialValue));
-  slider.className = "filter-slider";
-  slider.title = label + " slider snapped to common analysis frequencies.";
-  return slider;
-}
-
-function syncSingleFilterInputWithSlider(inputEl, sliderEl) {
-  if (!inputEl || !sliderEl) return;
-  const currentValue = numberOrNull(inputEl.value);
-  if (currentValue !== null) sliderEl.value = String(hzToSliderIndex(currentValue));
-}
-
-function syncFilterControlsFromInputs() {
-  syncSingleFilterInputWithSlider(lowCutInput, lowCutSlider);
-  syncSingleFilterInputWithSlider(lowCutSixDbInput, lowCutSixDbSlider);
-  syncSingleFilterInputWithSlider(highCutInput, highCutSlider);
-  syncSingleFilterInputWithSlider(highCutSixDbInput, highCutSixDbSlider);
 }
 
 function deriveDefaultHighpassSixDbHz(passHz) {
@@ -2543,10 +2206,6 @@ function adjustEvents(eventsIn, intervals) {
 }
 
 function eventDisplayLabel(event) {
-  if (event && Number.isFinite(event.code)) {
-    const override = getEventLabelOverride(event.code);
-    if (override) return override;
-  }
   if (event && typeof event.label === "string" && event.label.trim()) return event.label.trim();
   if (event && Number.isFinite(event.code)) return "E" + event.code;
   return "E?";
@@ -2829,11 +2488,6 @@ function renderStageSummary(model) {
 
   const channelDistance = model.mbllConfig ? model.mbllConfig.distanceMm : DEFAULT_CHANNEL_DISTANCE_MM;
   const distanceSource = model.mbllConfig ? model.mbllConfig.distanceSource : "default";
-  const selectedWavelengthIndex = currentWavelength === "wl2" ? 1 : 0;
-  const selectedWavelengthLabel = getWavelengthLabel(selectedWavelengthIndex);
-  const selectedIntensitySeries = selectedWavelengthIndex === 0 ? model.intensityWindowedWl1.series : model.intensityWindowedWl2.series;
-  const selectedDeltaOdSeries = selectedWavelengthIndex === 0 ? model.deltaOdWindowedWl1.series : model.deltaOdWindowedWl2.series;
-  const selectedProcessedOdSeries = selectedWavelengthIndex === 0 ? model.processedOdWindowedWl1.series : model.processedOdWindowedWl2.series;
   const mbllDetails = (model.hbWindowed && model.hbWindowed.hbo && model.hbWindowed.hbo.series.length)
     ? [
         summarizeStageSeries("HbO", model.hbWindowed.hbo.series, "uM"),
@@ -2842,172 +2496,37 @@ function renderStageSummary(model) {
       ].join("<br>")
     : escapeHtml(model.mbllConfig && model.mbllConfig.reason ? model.mbllConfig.reason : "Hemoglobin conversion unavailable.");
 
-  let cards;
-  if (activePipelineStep === "load") {
-    cards = [
-      {
-        title: "Recording",
-        formula: escapeHtml(datasetLabel + " | " + inputTypeLabel),
-        detail: [
-          "Sampling rate: " + samplingRate + " Hz",
-          "Duration: " + (data.wl1.length / samplingRate).toFixed(2) + " s",
-          "Channels: " + data.wl1[0].length,
-          "Wavelengths: " + getWavelengthLabel(0) + " + " + getWavelengthLabel(1)
-        ].join("<br>")
-      },
-      {
-        title: "Files and Markers",
-        formula: escapeHtml((basename(sources.hdr) || "missing HDR") + " | " + (basename(sources.evt) || "no EVT")),
-        detail: "Loaded " + events.length + " events and " + channelLabels.length + " channel labels."
-      }
-    ];
-  } else if (activePipelineStep === "inspect") {
-    const referenceDuration = getReferenceDurationSeconds();
-    const windowSeconds = getRequestedPlotWindowSeconds(referenceDuration);
-    cards = [
-      {
-        title: "Current Focus",
-        formula: escapeHtml((channelLabels[currentChannel] || "Channel") + " | " + selectedWavelengthLabel),
-        detail: summarizeStageSeries(selectedWavelengthLabel, selectedIntensitySeries, "a.u.")
-      },
-      {
-        title: "Visible Window",
-        formula: escapeHtml(updateVisibleWindowSummaryText(referenceDuration)),
-        detail: "Raw and processed views stay aligned over the same time span."
-      }
-    ];
-  } else if (activePipelineStep === "events") {
-    const groups = getDistinctEventGroups();
-    cards = [
-      {
-        title: "Marker Decode",
-        formula: escapeHtml("Raw marker fields -> event code"),
-        detail: "Loaded " + events.length + " events across " + groups.length + " distinct codes."
-      },
-      {
-        title: "Organized Labels",
-        formula: escapeHtml("Codes are relabeled before plotting and saving"),
-        detail: groups.length
-          ? groups.map(group => "E" + group.code + " -> " + escapeHtml(getOrganizedEventLabelByCode(group.code)) + " (" + group.count + ")").join("<br>")
-          : "No events loaded."
-      }
-    ];
-  } else if (activePipelineStep === "filter") {
-    cards = [
-      {
-        title: "Band of Interest",
-        formula: escapeHtml(model.filterLabel),
-        detail: buildDurationGuidance(validateFilterSpec(samplingRate, getRequestedFilterSpec()), data.wl1.length / samplingRate)
-      },
-      {
-        title: "Visible Change",
-        formula: escapeHtml("Raw panel vs filtered panel"),
-        detail: summarizeStageSeries(selectedWavelengthLabel, selectedProcessedOdSeries, "")
-      }
-    ];
-  } else if (activePipelineStep === "physiology") {
-    cards = [
-      {
-        title: "MBLL Assumptions",
-        formula: escapeHtml("rho=" + formatMetricNumber(channelDistance) + " mm (" + distanceSource + ") | DPF=" + formatMetricNumber(model.mbllConfig ? model.mbllConfig.dpf1 : DEFAULT_DPF.wl1) + "/" + formatMetricNumber(model.mbllConfig ? model.mbllConfig.dpf2 : DEFAULT_DPF.wl2)),
-        detail: "Paired wavelengths are combined into relative HbO and HbR changes."
-      },
-      {
-        title: "Visible Outputs",
-        formula: escapeHtml("Right column: HbO and HbR"),
-        detail: mbllDetails
-      }
-    ];
-  } else if (activePipelineStep === "trim") {
-    const intervals = parseIntervals(exclusionTable ? exclusionTable.value : "");
-    cards = [
-      {
-        title: "Excluded Intervals",
-        formula: escapeHtml(trimStepEnabled ? "Trim enabled" : "Trim disabled"),
-        detail: intervals.length
-          ? intervals.map(intv => intv.start.toFixed(2) + "-" + intv.end.toFixed(2) + " s").join("<br>")
-          : "No intervals excluded."
-      },
-      {
-        title: "Downstream Effect",
-        formula: escapeHtml("Excluded samples are removed before physiology"),
-        detail: "Events inside excluded ranges are dropped and later timestamps are shifted."
-      }
-    ];
-  } else if (activePipelineStep === "transform") {
-    cards = [
-      {
-        title: "Intensity",
-        formula: escapeHtml(getWavelengthLabel(0) + " + " + getWavelengthLabel(1) + " raw light levels"),
-        detail: [
-          summarizeStageSeries(getWavelengthLabel(0), model.intensityWindowedWl1.series, "a.u."),
-          summarizeStageSeries(getWavelengthLabel(1), model.intensityWindowedWl2.series, "a.u.")
-        ].join("<br>")
-      },
-      {
-        title: "Delta OD",
-        formula: escapeHtml("dOD = -ln(I / mean(I))"),
-        detail: [
-          summarizeStageSeries(getWavelengthLabel(0), model.deltaOdWindowedWl1.series, ""),
-          summarizeStageSeries(getWavelengthLabel(1), model.deltaOdWindowedWl2.series, "")
-        ].join("<br>")
-      }
-    ];
-  } else if (activePipelineStep === "review") {
-    cards = [
-      {
-        title: "Signal Chain",
-        formula: escapeHtml(model.filterLabel + (model.trimEnabled ? " | trim on" : " | trim off")),
-        detail: [
-          summarizeStageSeries(selectedWavelengthLabel + " intensity", selectedIntensitySeries, "a.u."),
-          summarizeStageSeries(selectedWavelengthLabel + " dOD", selectedDeltaOdSeries, ""),
-          summarizeStageSeries(selectedWavelengthLabel + " processed", selectedProcessedOdSeries, "")
-        ].join("<br>")
-      },
-      {
-        title: "Events and Notes",
-        formula: escapeHtml(events.length + " events | " + getDistinctEventGroups().length + " codes"),
-        detail: escapeHtml((branchTagInput && branchTagInput.value.trim()) || "No protocol label") + "<br>" + escapeHtml((notesInput && notesInput.value.trim()) || "No notes")
-      },
-      {
-        title: "Relative Hb",
-        formula: escapeHtml("rho=" + formatMetricNumber(channelDistance) + " mm (" + distanceSource + ") | DPF=" + formatMetricNumber(model.mbllConfig ? model.mbllConfig.dpf1 : DEFAULT_DPF.wl1) + "/" + formatMetricNumber(model.mbllConfig ? model.mbllConfig.dpf2 : DEFAULT_DPF.wl2)),
-        detail: mbllDetails
-      }
-    ];
-  } else {
-    cards = [
-      {
-        title: "1. Intensity",
-        formula: escapeHtml(getWavelengthLabel(0) + " + " + getWavelengthLabel(1) + " raw light levels"),
-        detail: [
-          summarizeStageSeries(getWavelengthLabel(0), model.intensityWindowedWl1.series, "a.u."),
-          summarizeStageSeries(getWavelengthLabel(1), model.intensityWindowedWl2.series, "a.u.")
-        ].join("<br>")
-      },
-      {
-        title: "2. Delta OD",
-        formula: escapeHtml("dOD = -ln(I / mean(I))"),
-        detail: [
-          summarizeStageSeries(getWavelengthLabel(0), model.deltaOdWindowedWl1.series, ""),
-          summarizeStageSeries(getWavelengthLabel(1), model.deltaOdWindowedWl2.series, "")
-        ].join("<br>")
-      },
-      {
-        title: "3. Processed dOD",
-        formula: escapeHtml(model.filterLabel + (model.trimEnabled ? " | trim on" : " | trim off")),
-        detail: [
-          summarizeStageSeries(getWavelengthLabel(0), model.processedOdWindowedWl1.series, ""),
-          summarizeStageSeries(getWavelengthLabel(1), model.processedOdWindowedWl2.series, "")
-        ].join("<br>")
-      },
-      {
-        title: "4. Relative Hb",
-        formula: escapeHtml("inv(E * rho * DPF) * dOD | rho=" + formatMetricNumber(channelDistance) + " mm (" + distanceSource + ") | DPF=" + formatMetricNumber(model.mbllConfig ? model.mbllConfig.dpf1 : DEFAULT_DPF.wl1) + "/" + formatMetricNumber(model.mbllConfig ? model.mbllConfig.dpf2 : DEFAULT_DPF.wl2)),
-        detail: mbllDetails
-      }
-    ];
-  }
+  const cards = [
+    {
+      title: "1. Intensity",
+      formula: escapeHtml(getWavelengthLabel(0) + " + " + getWavelengthLabel(1) + " raw light levels"),
+      detail: [
+        summarizeStageSeries(getWavelengthLabel(0), model.intensityWindowedWl1.series, "a.u."),
+        summarizeStageSeries(getWavelengthLabel(1), model.intensityWindowedWl2.series, "a.u.")
+      ].join("<br>")
+    },
+    {
+      title: "2. Delta OD",
+      formula: escapeHtml("dOD = -ln(I / mean(I))"),
+      detail: [
+        summarizeStageSeries(getWavelengthLabel(0), model.deltaOdWindowedWl1.series, ""),
+        summarizeStageSeries(getWavelengthLabel(1), model.deltaOdWindowedWl2.series, "")
+      ].join("<br>")
+    },
+    {
+      title: "3. Processed dOD",
+      formula: escapeHtml(model.filterLabel + (model.trimEnabled ? " | trim on" : " | trim off")),
+      detail: [
+        summarizeStageSeries(getWavelengthLabel(0), model.processedOdWindowedWl1.series, ""),
+        summarizeStageSeries(getWavelengthLabel(1), model.processedOdWindowedWl2.series, "")
+      ].join("<br>")
+    },
+    {
+      title: "4. Relative Hb",
+      formula: escapeHtml("inv(E * rho * DPF) * dOD | rho=" + formatMetricNumber(channelDistance) + " mm (" + distanceSource + ") | DPF=" + formatMetricNumber(model.mbllConfig ? model.mbllConfig.dpf1 : DEFAULT_DPF.wl1) + "/" + formatMetricNumber(model.mbllConfig ? model.mbllConfig.dpf2 : DEFAULT_DPF.wl2)),
+      detail: mbllDetails
+    }
+  ];
 
   stageSummaryHost.innerHTML = cards.map(card => {
     return ""
@@ -3017,139 +2536,6 @@ function renderStageSummary(model) {
       + "  <div class='stage-card-detail'>" + card.detail + "</div>"
       + "</div>";
   }).join("");
-}
-
-function updateVisibleWindowSummaryText(durationSeconds) {
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return "No data loaded";
-  const windowSeconds = getRequestedPlotWindowSeconds(durationSeconds);
-  const start = getWindowStartSeconds(durationSeconds, windowSeconds);
-  const end = Math.min(durationSeconds, start + windowSeconds);
-  if (windowSeconds >= durationSeconds - 1e-6) {
-    return "Full record: 0.0-" + durationSeconds.toFixed(1) + " s";
-  }
-  return "Showing " + start.toFixed(1) + "-" + end.toFixed(1) + " s";
-}
-
-function getDistinctEventGroups() {
-  const groups = new Map();
-  events.forEach(event => {
-    const code = Number(event.code);
-    if (!Number.isFinite(code)) return;
-    if (!groups.has(code)) {
-      groups.set(code, { code, count: 0, firstSample: event.sample, lastSample: event.sample });
-    }
-    const group = groups.get(code);
-    group.count += 1;
-    group.firstSample = Math.min(group.firstSample, event.sample);
-    group.lastSample = Math.max(group.lastSample, event.sample);
-  });
-  return Array.from(groups.values()).sort((a, b) => a.code - b.code);
-}
-
-function getEventLabelOverride(code) {
-  return Object.prototype.hasOwnProperty.call(eventLabelOverrides, code) ? eventLabelOverrides[code] : "";
-}
-
-function setEventLabelOverride(code, label) {
-  const normalized = String(label || "").trim();
-  if (!normalized) delete eventLabelOverrides[code];
-  else eventLabelOverrides[code] = normalized;
-  redraw();
-  renderMeta();
-  renderEventOrganizationPanel();
-}
-
-function getOrganizedEventLabelByCode(code) {
-  const override = getEventLabelOverride(code);
-  if (override) return override;
-  return "E" + code;
-}
-
-function renderEventOrganizationPanel() {
-  if (!eventOrganizationContentEl) return;
-  if (!data.wl1 || !samplingRate) {
-    eventOrganizationContentEl.innerHTML = "";
-    const note = document.createElement("div");
-    note.className = "pipeline-empty-note";
-    note.textContent = "Load a dataset to decode binary marker fields into organized event labels.";
-    eventOrganizationContentEl.appendChild(note);
-    return;
-  }
-  const groups = getDistinctEventGroups();
-  const durationSeconds = Number.isFinite(samplingRate) && samplingRate > 0 && data.wl1 ? (data.wl1.length / samplingRate) : null;
-  const gaps = [];
-  for (let i = 1; i < events.length; i++) {
-    gaps.push((events[i].sample - events[i - 1].sample) / samplingRate);
-  }
-  const gapSummary = gaps.length
-    ? ("Marker spacing: min " + Math.min(...gaps).toFixed(2) + " s | median " + percentile(gaps, 0.5).toFixed(2) + " s | max " + Math.max(...gaps).toFixed(2) + " s")
-    : "Marker spacing: not enough events to summarize.";
-
-  eventOrganizationContentEl.innerHTML = "";
-
-  const decodeNote = document.createElement("div");
-  decodeNote.className = "text-xs text-slate-600 leading-tight";
-  decodeNote.textContent = "Binary marker fields are decoded into event codes, then organized into labels that appear on plots and are saved with the protocol.";
-  eventOrganizationContentEl.appendChild(decodeNote);
-
-  const summaryGrid = document.createElement("div");
-  summaryGrid.className = "grid grid-cols-2 gap-x-3 gap-y-1 text-sm";
-  summaryGrid.innerHTML = ""
-    + "<div class='text-slate-600'>Markers loaded</div><div>" + events.length + "</div>"
-    + "<div class='text-slate-600'>Distinct codes</div><div>" + groups.length + "</div>"
-    + "<div class='text-slate-600'>Duration covered</div><div>" + (durationSeconds === null ? "?" : durationSeconds.toFixed(2) + " s") + "</div>"
-    + "<div class='text-slate-600'>Structure</div><div>" + escapeHtml(gapSummary) + "</div>";
-  eventOrganizationContentEl.appendChild(summaryGrid);
-
-  const table = document.createElement("div");
-  table.className = "event-org-table";
-  const header = document.createElement("div");
-  header.className = "event-org-row event-org-head";
-  header.innerHTML = "<div>Code</div><div>Count</div><div>Label</div><div>Span</div>";
-  table.appendChild(header);
-
-  groups.forEach(group => {
-    const row = document.createElement("div");
-    row.className = "event-org-row";
-
-    const codeCell = document.createElement("div");
-    codeCell.textContent = "E" + group.code;
-    row.appendChild(codeCell);
-
-    const countCell = document.createElement("div");
-    countCell.textContent = String(group.count);
-    row.appendChild(countCell);
-
-    const labelCell = document.createElement("div");
-    const inputEl = document.createElement("input");
-    inputEl.type = "text";
-    inputEl.className = "p-2 border rounded bg-white w-full text-sm";
-    inputEl.value = getEventLabelOverride(group.code);
-    inputEl.placeholder = getOrganizedEventLabelByCode(group.code);
-    inputEl.oninput = () => setEventLabelOverride(group.code, inputEl.value);
-    labelCell.appendChild(inputEl);
-    row.appendChild(labelCell);
-
-    const spanCell = document.createElement("div");
-    const firstTime = Number.isFinite(samplingRate) && samplingRate > 0 ? (group.firstSample / samplingRate).toFixed(2) : "?";
-    const lastTime = Number.isFinite(samplingRate) && samplingRate > 0 ? (group.lastSample / samplingRate).toFixed(2) : "?";
-    spanCell.textContent = firstTime + "-" + lastTime + " s";
-    row.appendChild(spanCell);
-
-    table.appendChild(row);
-  });
-  eventOrganizationContentEl.appendChild(table);
-}
-
-function percentile(values, p) {
-  if (!Array.isArray(values) || !values.length) return 0;
-  const sorted = values.slice().sort((a, b) => a - b);
-  const pos = (sorted.length - 1) * p;
-  const lower = Math.floor(pos);
-  const upper = Math.ceil(pos);
-  if (lower === upper) return sorted[lower];
-  const weight = pos - lower;
-  return sorted[lower] * (1 - weight) + sorted[upper] * weight;
 }
 
 function getRequestedFilterSpec() {

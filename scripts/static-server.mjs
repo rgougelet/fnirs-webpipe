@@ -48,24 +48,10 @@ export function startStaticServer({ rootDir, host = "127.0.0.1", port = 4173 }) 
   });
 
   return new Promise((resolve, reject) => {
-    const tryListen = (requestedPort, allowFallback) => {
-      const onError = (error) => {
-        server.off("error", onError);
-        if (allowFallback && error && error.code === "EADDRINUSE") {
-          tryListen(0, false);
-          return;
-        }
-        reject(error);
-      };
-      server.once("error", onError);
-      server.listen(requestedPort, host, () => {
-        server.off("error", onError);
-        const address = server.address();
-        const actualPort = address && typeof address === "object" ? address.port : requestedPort;
-        resolve({ server, url: `http://${host}:${actualPort}` });
-      });
-    };
-
-    tryListen(port, true);
+    server.once("error", reject);
+    server.listen(port, host, () => {
+      server.off("error", reject);
+      resolve({ server, url: `http://${host}:${port}` });
+    });
   });
 }
